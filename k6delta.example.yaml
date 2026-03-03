@@ -1,0 +1,25 @@
+# k6delta.yaml -- k6delta configuration
+# Variable interpolation: ${env} and ${app} are replaced at runtime.
+
+provider: ecs          # v1 only supports "ecs"
+region: eu-west-1      # AWS region (overridable with --region)
+
+defaults:
+  env: staging         # default --env value
+  phase: smoke         # default --phase value
+  results_dir: tests/performance/results
+
+apps:
+  web:
+    cluster: "myapp-${env}"
+    service: "myapp-web-${env}"
+    asg_prefix: "myapp-${env}-ecs-"              # optional: prefix to discover ASG by name
+    capacity_provider: "myapp-${env}-ec2"         # optional: for CapacityProviderReservation metric
+    test_file: "tests/performance/web/${phase}.js"
+    alarm_prefix: "myapp-${env}"                  # optional: for CloudWatch alarm history
+
+  worker:
+    cluster: "myapp-${env}"
+    service: "myapp-worker-${env}"
+    test_file: "tests/performance/worker/${phase}.js"
+    # No asg_prefix, capacity_provider, or alarm_prefix -- k6delta skips those metrics

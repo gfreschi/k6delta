@@ -1,0 +1,98 @@
+package tui
+
+import "strings"
+
+// StepStatus represents the current state of a step.
+type StepStatus int
+
+const (
+	StepPending StepStatus = iota
+	StepRunning
+	StepDone
+	StepFailed
+)
+
+// Step represents a single item in the step tracker.
+type Step struct {
+	Name   string
+	Status StepStatus
+	Detail string
+}
+
+// StepTracker renders a progress list of steps.
+type StepTracker struct {
+	Steps []Step
+}
+
+// NewStepTracker creates a StepTracker with the given step names, all pending.
+func NewStepTracker(names ...string) *StepTracker {
+	steps := make([]Step, len(names))
+	for i, n := range names {
+		steps[i] = Step{Name: n, Status: StepPending}
+	}
+	return &StepTracker{Steps: steps}
+}
+
+// SetStatus sets the status of the step at the given index.
+func (st *StepTracker) SetStatus(index int, status StepStatus) {
+	if index >= 0 && index < len(st.Steps) {
+		st.Steps[index].Status = status
+	}
+}
+
+// SetDetail sets the detail text for the step at the given index.
+func (st *StepTracker) SetDetail(index int, detail string) {
+	if index >= 0 && index < len(st.Steps) {
+		st.Steps[index].Detail = detail
+	}
+}
+
+// MarkDone sets the step to StepDone and assigns the detail text.
+func (st *StepTracker) MarkDone(index int, detail string) {
+	if index >= 0 && index < len(st.Steps) {
+		st.Steps[index].Status = StepDone
+		st.Steps[index].Detail = detail
+	}
+}
+
+// MarkFailed sets the step to StepFailed and assigns the detail text.
+func (st *StepTracker) MarkFailed(index int, detail string) {
+	if index >= 0 && index < len(st.Steps) {
+		st.Steps[index].Status = StepFailed
+		st.Steps[index].Detail = detail
+	}
+}
+
+// MarkRunning sets the step to StepRunning.
+func (st *StepTracker) MarkRunning(index int) {
+	if index >= 0 && index < len(st.Steps) {
+		st.Steps[index].Status = StepRunning
+	}
+}
+
+// View renders the step list as a string.
+func (st *StepTracker) View() string {
+	var b strings.Builder
+	for _, s := range st.Steps {
+		switch s.Status {
+		case StepPending:
+			b.WriteString("  \u25cb " + DimStyle.Render(s.Name))
+		case StepRunning:
+			b.WriteString("  \u25b8 " + BoldStyle.Render(s.Name) + "...")
+		case StepDone:
+			line := "  \u2713 " + SuccessStyle.Render(s.Name)
+			if s.Detail != "" {
+				line += ": " + s.Detail
+			}
+			b.WriteString(line)
+		case StepFailed:
+			line := "  \u2717 " + ErrorStyle.Render(s.Name)
+			if s.Detail != "" {
+				line += ": " + s.Detail
+			}
+			b.WriteString(line)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}

@@ -1,0 +1,18 @@
+provider: ecs
+region: eu-west-1
+defaults:
+  env: staging
+  phase: smoke
+  results_dir: results
+apps:
+  web:
+    cluster: "myapp-${env}"
+    service: "myapp-web-${env}"
+    asg_prefix: "myapp-${env}-ecs-"
+    capacity_provider: "myapp-${env}-ec2"
+    test_file: "tests/${app}/${phase}.js"
+    alarm_prefix: "myapp-${env}"
+  worker:
+    cluster: "myapp-${env}"
+    service: "myapp-worker-${env}"
+    test_file: "tests/${app}/${phase}.js"

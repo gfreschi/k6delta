@@ -1,0 +1,7 @@
+provider: ecs
+region: us-east-1
+apps:
+  api:
+    cluster: "api-${env}"
+    service: "api-${env}"
+    test_file: "load/${phase}.js"

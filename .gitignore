@@ -1,0 +1,36 @@
+# Build artifacts
+/k6delta
+/k6delta-*
+*.exe
+dist/
+
+# Test results
+results/
+*.json.gz
+
+# Go
+vendor/
+coverage.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Secrets / credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+credentials
+credentials.json
+
+# OS
+.DS_Store
+Thumbs.db
