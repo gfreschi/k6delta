@@ -60,6 +60,20 @@ func TestBuildArgs(t *testing.T) {
 	if !outFound {
 		t.Errorf("--out json=...timeseries.json.gz not found in args: %v", args)
 	}
+
+	summaryFound := false
+	for i, a := range args {
+		if a == "--summary-export" && i+1 < len(args) {
+			val := args[i+1]
+			if strings.HasSuffix(val, "-summary.json") {
+				summaryFound = true
+			}
+			break
+		}
+	}
+	if !summaryFound {
+		t.Errorf("--summary-export ...-summary.json not found in args: %v", args)
+	}
 }
 
 func TestBuildArgsWithBaseURL(t *testing.T) {

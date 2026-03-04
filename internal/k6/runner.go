@@ -42,6 +42,10 @@ func BuildArgs(cfg RunConfig) []string {
 
 	timeseriesPath := filepath.Join(cfg.ResultsDir, cfg.ResultsPrefix+"-timeseries.json.gz")
 	args = append(args, "--out", fmt.Sprintf("json=%s", timeseriesPath))
+
+	summaryPath := filepath.Join(cfg.ResultsDir, cfg.ResultsPrefix+"-summary.json")
+	args = append(args, "--summary-export", summaryPath)
+
 	args = append(args, cfg.TestFile)
 
 	return args

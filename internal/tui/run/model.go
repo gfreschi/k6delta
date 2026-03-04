@@ -26,6 +26,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/streamchart"
+	"github.com/gfreschi/k6delta/internal/tui/components/timechart"
 	"github.com/gfreschi/k6delta/internal/tui/components/trendline"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
@@ -91,9 +92,14 @@ type Model struct {
 	// Report dashboard state (active in phaseDone)
 	focusMgr    *focus.Manager
 	k6Panel     panel.Model
+	graphsPanel panel.Model
 	infraPanel  panel.Model
 	eventsPanel panel.Model
 	rawMode     bool
+
+	// Report time-series charts
+	reportRPSChart     timechart.Model
+	reportLatencyChart timechart.Model
 
 	// Live dashboard state
 	streamingSupported bool
@@ -896,19 +902,28 @@ func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
 	panelH := m.ctx.ContentHeight / 2
 
-	m.k6Panel = panel.NewModel(m.ctx, "k6 Summary [1]", w, panelH)
+	halfW := w / 2
+
+	// Top row: k6 (left) + graphs (right)
+	m.k6Panel = panel.NewModel(m.ctx, "k6 Summary [1]", halfW, panelH)
 	m.k6Panel.SetContent(m.renderK6SummaryGrid())
 
+	m.graphsPanel = panel.NewModel(m.ctx, "Graphs [2]", w-halfW, panelH)
+	m.reportRPSChart = timechart.NewModel(m.ctx, "Throughput", "req/s", w-halfW-4, panelH/2-2)
+	m.reportLatencyChart = timechart.NewModel(m.ctx, "Latency", "ms", w-halfW-4, panelH/2-2)
+	m.populateReportCharts()
+	m.graphsPanel.SetContent(m.renderGraphsPanelContent())
+
+	// Bottom row: infra (left) + events (right)
 	infraW := w * 55 / 100
 	eventsW := w - infraW
-
-	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", infraW, panelH)
+	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [3]", infraW, panelH)
 	m.infraPanel.SetContent(m.renderInfraTable())
 
-	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [3]", eventsW, panelH)
+	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, panelH)
 	m.eventsPanel.SetContent(m.renderEventsList())
 
-	m.focusMgr = focus.New(3)
+	m.focusMgr = focus.New(4)
 	m.k6Panel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
@@ -925,18 +940,28 @@ func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
 	panelH := m.ctx.ContentHeight / 2
 
-	m.k6Panel.SetDimensions(w, panelH)
-
 	if w >= constants.BreakpointSplit {
-		// Split: infra + events side by side
+		halfW := w / 2
+		m.k6Panel.SetDimensions(halfW, panelH)
+		m.graphsPanel.SetDimensions(w-halfW, panelH)
+
 		infraW := w * 55 / 100
 		eventsW := w - infraW
 		m.infraPanel.SetDimensions(infraW, panelH)
 		m.eventsPanel.SetDimensions(eventsW, panelH)
+
+		m.reportRPSChart.Resize(w-halfW-4, panelH/2-2)
+		m.reportLatencyChart.Resize(w-halfW-4, panelH/2-2)
+		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 	} else {
-		// Stacked: full width
+		m.k6Panel.SetDimensions(w, panelH)
+		m.graphsPanel.SetDimensions(w, panelH)
 		m.infraPanel.SetDimensions(w, panelH)
 		m.eventsPanel.SetDimensions(w, panelH)
+
+		m.reportRPSChart.Resize(w-4, panelH/2-2)
+		m.reportLatencyChart.Resize(w-4, panelH/2-2)
+		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 	}
 }
 
@@ -946,33 +971,40 @@ func (m Model) viewReportDashboard() string {
 	}
 
 	width := m.ctx.ContentWidth
-	k6View := m.k6Panel.View()
 	verdict := m.renderVerdictBar()
 
 	switch {
 	case width >= constants.BreakpointSplit:
-		// Split: infra + events side by side
-		middle := lipgloss.JoinHorizontal(lipgloss.Top,
+		topRow := lipgloss.JoinHorizontal(lipgloss.Top,
+			m.k6Panel.View(),
+			m.graphsPanel.View(),
+		)
+		bottomRow := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.infraPanel.View(),
 			m.eventsPanel.View(),
 		)
-		return lipgloss.JoinVertical(lipgloss.Left, k6View, middle, verdict)
+		return lipgloss.JoinVertical(lipgloss.Left, topRow, bottomRow, verdict)
 	case width >= constants.BreakpointStacked:
-		// Stacked: all panels vertical
 		return lipgloss.JoinVertical(lipgloss.Left,
-			k6View, m.infraPanel.View(), m.eventsPanel.View(), verdict)
+			m.k6Panel.View(),
+			m.graphsPanel.View(),
+			m.infraPanel.View(),
+			m.eventsPanel.View(),
+			verdict,
+		)
 	default:
-		// Fallback: static text
 		return m.renderReport()
 	}
 }
 
 func (m *Model) updateDashboardFocus() tea.Cmd {
 	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
-	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
-	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
+	m.graphsPanel.SetFocused(m.focusMgr.IsFocused(1))
+	m.infraPanel.SetFocused(m.focusMgr.IsFocused(2))
+	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(3))
 	return tea.Batch(
 		m.k6Panel.TransitionCmd(),
+		m.graphsPanel.TransitionCmd(),
 		m.infraPanel.TransitionCmd(),
 		m.eventsPanel.TransitionCmd(),
 	)
@@ -984,8 +1016,10 @@ func (m *Model) scrollFocusedPanel(dir int) {
 	case 0:
 		p = &m.k6Panel
 	case 1:
-		p = &m.infraPanel
+		p = &m.graphsPanel
 	case 2:
+		p = &m.infraPanel
+	case 3:
 		p = &m.eventsPanel
 	}
 	if p == nil {
@@ -1099,6 +1133,50 @@ func (m Model) renderEventsList() string {
 		return "No scaling events recorded"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m *Model) populateReportCharts() {
+	for _, mr := range m.metrics {
+		switch mr.ID {
+		case "alb_requests_per_target":
+			if len(mr.Timestamps) > 0 && len(mr.Values) > 0 {
+				m.reportRPSChart.SetData(mr.Timestamps, mr.Values)
+			}
+		case "alb_response_time":
+			if len(mr.Timestamps) > 0 && len(mr.Values) > 0 {
+				m.reportLatencyChart.SetData(mr.Timestamps, mr.Values)
+			}
+		}
+	}
+}
+
+func (m Model) renderGraphsPanelContent() string {
+	hasRPS := false
+	hasLatency := false
+	for _, mr := range m.metrics {
+		if mr.ID == "alb_requests_per_target" && len(mr.Values) > 0 {
+			hasRPS = true
+		}
+		if mr.ID == "alb_response_time" && len(mr.Values) > 0 {
+			hasLatency = true
+		}
+	}
+
+	if !hasRPS && !hasLatency {
+		return m.ctx.Styles.Common.FaintTextStyle.Render("No metric data for graphs")
+	}
+
+	var sections []string
+	if hasRPS {
+		sections = append(sections, m.reportRPSChart.View())
+	}
+	if hasLatency {
+		if len(sections) > 0 {
+			sections = append(sections, "")
+		}
+		sections = append(sections, m.reportLatencyChart.View())
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m Model) renderVerdictBar() string {
