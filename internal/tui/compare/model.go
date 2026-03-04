@@ -3,12 +3,16 @@ package comparetui
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/report"
+	"github.com/gfreschi/k6delta/internal/tui/common"
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
@@ -103,7 +107,7 @@ func (m Model) View() string {
 	var k6Rows []table.Row
 	for _, row := range m.result.K6Rows {
 		label, valA, valB := formatK6Row(row)
-		delta := m.formatDelta(row.Delta, row.Direction)
+		delta := m.formatDelta(row.Delta, row.Direction, row.Metric)
 		k6Rows = append(k6Rows, table.Row{label, valA, valB, delta})
 	}
 	k6Tbl := table.NewModel(m.ctx, []table.Column{
@@ -141,10 +145,10 @@ func (m Model) View() string {
 
 	var infraRows []table.Row
 	if cpuRow != nil && (cpuRow.ValueA != "-" || cpuRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ECS CPU peak", cpuRow.ValueA + "%", cpuRow.ValueB + "%", m.formatDelta(cpuRow.Delta, cpuRow.Direction)})
+		infraRows = append(infraRows, table.Row{"ECS CPU peak", cpuRow.ValueA + "%", cpuRow.ValueB + "%", m.formatDelta(cpuRow.Delta, cpuRow.Direction, cpuRow.Metric)})
 	}
 	if memRow != nil && (memRow.ValueA != "-" || memRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ECS memory peak", memRow.ValueA + "%", memRow.ValueB + "%", m.formatDelta(memRow.Delta, memRow.Direction)})
+		infraRows = append(infraRows, table.Row{"ECS memory peak", memRow.ValueA + "%", memRow.ValueB + "%", m.formatDelta(memRow.Delta, memRow.Direction, memRow.Metric)})
 	}
 	if tasksBefore != nil && tasksAfter != nil {
 		infraRows = append(infraRows, table.Row{"Tasks (before/after)",
@@ -157,7 +161,7 @@ func (m Model) View() string {
 			asgBefore.ValueB + "/" + asgAfter.ValueB, ""})
 	}
 	if alb5xxRow != nil && (alb5xxRow.ValueA != "-" || alb5xxRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, m.formatDelta(alb5xxRow.Delta, alb5xxRow.Direction)})
+		infraRows = append(infraRows, table.Row{"ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, m.formatDelta(alb5xxRow.Delta, alb5xxRow.Direction, alb5xxRow.Metric)})
 	}
 
 	if len(infraRows) > 0 {
@@ -171,7 +175,7 @@ func (m Model) View() string {
 		sections = append(sections, infraTbl.View())
 	}
 
-	sections = append(sections, "", m.footerComp.View())
+	sections = append(sections, "", m.renderSummary(), "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -195,33 +199,100 @@ func formatK6Row(row report.ComparisonRow) (label, valA, valB string) {
 	}
 }
 
-func (m Model) formatDelta(delta, direction string) string {
+// parsePctChange extracts the numeric percentage from a delta string like "+5.2%" or "-3.1%".
+// Returns 0 for non-numeric deltas ("same", "new", "N/A").
+func parsePctChange(delta string) float64 {
+	s := strings.TrimSuffix(delta, "%")
+	s = strings.TrimPrefix(s, "+")
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// isLowerBetter returns true for metrics where a decrease is an improvement.
+func isLowerBetter(metric string) bool {
+	switch metric {
+	case "p95", "p90", "error_rate", "ecs_cpu_peak", "ecs_memory_peak", "alb_5xx":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m Model) formatDelta(delta, direction, metric string) string {
 	if direction == "" {
 		return delta
 	}
 
-	ds := m.ctx.Styles.Delta
-	var arrow string
-	var style lipgloss.Style
+	pct := parsePctChange(delta)
+	tiers := m.ctx.Styles.Delta.Tiers()
+	style := common.DeltaStyle(tiers, pct, isLowerBetter(metric))
 
+	arrow := ""
 	switch {
-	case direction == "better" && strings.HasPrefix(delta, "-"):
-		arrow = " \u2193"
-		style = ds.Better
-	case direction == "better" && strings.HasPrefix(delta, "+"):
-		arrow = " \u2191"
-		style = ds.Better
-	case direction == "worse" && strings.HasPrefix(delta, "+"):
-		arrow = " \u2191"
-		style = ds.Worse
-	case direction == "worse" && strings.HasPrefix(delta, "-"):
-		arrow = " \u2193"
-		style = ds.Worse
-	default:
-		return delta
+	case strings.HasPrefix(delta, "+"):
+		arrow = " " + constants.IconUp
+	case strings.HasPrefix(delta, "-"):
+		arrow = " " + constants.IconDown
 	}
 
-	return delta + style.Render(arrow)
+	dirWord := ""
+	if direction == "better" {
+		dirWord = " better"
+	} else if direction == "worse" {
+		dirWord = " worse"
+	}
+
+	return style.Render(delta + arrow + dirWord)
+}
+
+type comparisonSummary struct {
+	improved    int
+	regressed   int
+	unchanged   int
+	worstMetric string
+	worstPct    float64
+}
+
+func computeSummary(result *report.ComparisonResult) comparisonSummary {
+	var sum comparisonSummary
+	allRows := append(result.K6Rows, result.InfraRows...)
+	for _, row := range allRows {
+		switch row.Direction {
+		case "better":
+			sum.improved++
+		case "worse":
+			sum.regressed++
+			pct := math.Abs(parsePctChange(row.Delta))
+			if pct > math.Abs(sum.worstPct) {
+				sum.worstPct = parsePctChange(row.Delta)
+				sum.worstMetric = row.Metric
+			}
+		default:
+			sum.unchanged++
+		}
+	}
+	return sum
+}
+
+func (m Model) renderSummary() string {
+	sum := computeSummary(m.result)
+	s := m.ctx.Styles
+
+	improved := s.Common.SuccessStyle.Render(fmt.Sprintf("%d improved", sum.improved))
+	regressed := s.Common.ErrorStyle.Render(fmt.Sprintf("%d regressed", sum.regressed))
+	unchanged := s.Common.FaintTextStyle.Render(fmt.Sprintf("%d unchanged", sum.unchanged))
+
+	line1 := fmt.Sprintf("  %s %s %s %s %s", improved, constants.IconBullet, regressed, constants.IconBullet, unchanged)
+
+	if sum.worstMetric != "" {
+		worst := s.Delta.WorseSevere.Render(fmt.Sprintf("%s %+.1f%%", sum.worstMetric, sum.worstPct))
+		return line1 + "\n" + fmt.Sprintf("  Worst regression: %s", worst)
+	}
+
+	return line1
 }
 
 // RunJSON performs the comparison and prints JSON, bypassing the TUI.

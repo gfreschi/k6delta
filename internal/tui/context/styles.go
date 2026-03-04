@@ -82,6 +82,20 @@ type DeltaStyles struct {
 	Neutral       lipgloss.Style
 }
 
+// Tiers returns a common.DeltaStyleTiers for use with common.DeltaStyle.
+func (ds DeltaStyles) Tiers() common.DeltaStyleTiers {
+	return common.DeltaStyleTiers{
+		Better:        ds.Better,
+		BetterMild:    ds.BetterMild,
+		BetterStrong:  ds.BetterStrong,
+		Worse:         ds.Worse,
+		WorseMild:     ds.WorseMild,
+		WorseModerate: ds.WorseModerate,
+		WorseSevere:   ds.WorseSevere,
+		Neutral:       ds.Neutral,
+	}
+}
+
 // InitStyles builds all styles from a theme. Called once at startup.
 func InitStyles(t theme.Theme) Styles {
 	return Styles{
