@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -18,7 +19,9 @@ import (
 	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/report"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/linechart"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
@@ -77,6 +80,20 @@ type Model struct {
 	spinner  spinner.Model
 	err      error
 	quitting bool
+
+	// Live dashboard state
+	liveMode     bool
+	graphMode    bool
+	k6PointChan  chan k6runner.K6Point
+	k6Cancel     context.CancelFunc
+	rpsChart     linechart.Model
+	latencyChart linechart.Model
+	cpuGauge     gauge.Model
+	memGauge     gauge.Model
+	liveSnapshot provider.Snapshot
+	liveMetrics  []provider.MetricResult
+	liveRPSCount int
+	liveRPSTime  time.Time
 }
 
 type authOKMsg struct{}
@@ -94,6 +111,7 @@ type reportMsg struct {
 	path   string
 }
 type errMsg struct{ err error }
+type k6PointMsg struct{ point k6runner.K6Point }
 
 // ProgressMsg is sent by the provider's OnProgress callback via tea.Program.Send.
 type ProgressMsg struct {
@@ -137,6 +155,11 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		footerComp:    ftr,
 		resultsPrefix: prefix,
 		spinner:       s,
+		graphMode:     true,
+		rpsChart:      linechart.NewModel(ctx, "Throughput", "req/s", 40, 8),
+		latencyChart:  linechart.NewModel(ctx, "Latency", "ms", 40, 8),
+		cpuGauge:      gauge.NewModel(ctx, "CPU", 30),
+		memGauge:      gauge.NewModel(ctx, "Memory", 30),
 	}
 }
 
@@ -147,8 +170,23 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.liveMode {
+			switch msg.String() {
+			case "g":
+				m.graphMode = !m.graphMode
+				return m, nil
+			case "a":
+				if m.k6Cancel != nil {
+					m.k6Cancel()
+				}
+				return m, nil
+			}
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if m.k6Cancel != nil {
+				m.k6Cancel()
+			}
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -158,6 +196,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.headerComp.UpdateContext(m.ctx)
 		m.stepper.UpdateContext(m.ctx)
 		m.footerComp.UpdateContext(m.ctx)
+		m.rpsChart.UpdateContext(m.ctx)
+		m.latencyChart.UpdateContext(m.ctx)
+		m.cpuGauge.UpdateContext(m.ctx)
+		m.memGauge.UpdateContext(m.ctx)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -187,7 +229,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stepper.MarkRunning(stepK6)
 			m.currentPhase = phaseK6Run
 			m.startTime = time.Now().UTC()
-			return m, m.runK6()
+
+			// Start streaming k6 with live dashboard
+			m.k6PointChan = make(chan k6runner.K6Point, 256)
+			m.liveMode = true
+			k6Ctx, cancel := context.WithCancel(context.Background())
+			m.k6Cancel = cancel
+			m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
+				{Key: "g", Action: "graphs"},
+				{Key: "a", Action: "abort"},
+				{Key: "q", Action: "quit"},
+			})
+			return m, tea.Batch(
+				m.runK6Streaming(k6Ctx),
+				m.waitForK6Point(),
+				infraPollCmd(context.Background(), m.provider, 15*time.Second),
+			)
 		case "post":
 			m.postSnapshot = msg.snapshot
 			detail := fmt.Sprintf("tasks=%d/%d asg=%d/%d",
@@ -205,7 +262,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.fetchAnalysis()
 		}
 
+	case k6PointMsg:
+		m.handleK6Point(msg.point)
+		return m, m.waitForK6Point()
+
+	case infraTickMsg:
+		m.liveSnapshot = msg.snapshot
+		m.liveMetrics = msg.metrics
+		m.updateGaugesFromMetrics(msg.metrics)
+		if m.liveMode {
+			return m, infraPollCmd(context.Background(), m.provider, 15*time.Second)
+		}
+		return m, nil
+
 	case k6DoneMsg:
+		m.liveMode = false
+		m.k6Cancel = nil
+		m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
+			{Key: "q", Action: "quit"},
+		})
 		m.k6Result = &msg.result
 		m.endTime = time.Now().UTC()
 		exitDetail := fmt.Sprintf("exit %d", msg.result.ExitCode)
@@ -246,6 +321,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.liveMode {
+		return m.viewLiveDashboard()
 	}
 
 	cs := m.ctx.Styles.Common
@@ -682,4 +761,181 @@ func fmtMetricValue(id string, v float64) string {
 	default:
 		return fmt.Sprintf("%.1f%%", v)
 	}
+}
+
+// --- Live Dashboard ---
+
+func (m Model) runK6Streaming(k6Ctx context.Context) tea.Cmd {
+	cfg := k6runner.RunConfig{
+		TestFile:      m.app.TestFile,
+		Env:           m.app.Env,
+		ResultsPrefix: m.resultsPrefix,
+		ResultsDir:    m.app.ResultsDir,
+	}
+	if m.baseURL != "" {
+		cfg.BaseURL = m.baseURL
+	}
+	ch := m.k6PointChan
+	startTime := m.startTime
+	return func() tea.Msg {
+		result, err := k6runner.RunStreaming(k6Ctx, cfg, ch)
+		if err != nil {
+			return errMsg{err: fmt.Errorf("k6 streaming: %w", err)}
+		}
+		result.StartTime = startTime
+		return k6DoneMsg{result: result}
+	}
+}
+
+func (m Model) waitForK6Point() tea.Cmd {
+	ch := m.k6PointChan
+	return func() tea.Msg {
+		point, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return k6PointMsg{point: point}
+	}
+}
+
+func (m *Model) handleK6Point(point k6runner.K6Point) {
+	switch point.Metric {
+	case "http_req_duration":
+		m.latencyChart.AddPoint(point.Value)
+	case "http_reqs":
+		pointTime, err := time.Parse(time.RFC3339, point.Time)
+		if err != nil {
+			return
+		}
+		second := pointTime.Truncate(time.Second)
+		if second != m.liveRPSTime {
+			if !m.liveRPSTime.IsZero() {
+				m.rpsChart.AddPoint(float64(m.liveRPSCount))
+			}
+			m.liveRPSCount = 0
+			m.liveRPSTime = second
+		}
+		m.liveRPSCount++
+	}
+}
+
+func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
+	for _, mr := range metrics {
+		if len(mr.Values) == 0 {
+			continue
+		}
+		latest := mr.Values[len(mr.Values)-1]
+		switch mr.ID {
+		case "ecs_cpu":
+			m.cpuGauge.SetValue(latest, 100.0)
+		case "ecs_memory":
+			m.memGauge.SetValue(latest, 100.0)
+		}
+	}
+}
+
+func (m Model) viewLiveDashboard() string {
+	s := m.ctx.Styles
+	var sections []string
+
+	sections = append(sections, m.headerComp.View(), "")
+
+	// Elapsed time
+	elapsed := time.Since(m.startTime)
+	mins := int(elapsed.Minutes())
+	secs := int(elapsed.Seconds()) % 60
+	sections = append(sections, s.Common.FaintTextStyle.Render(
+		fmt.Sprintf("  Elapsed: %dm %ds", mins, secs)))
+	sections = append(sections, "")
+
+	// Split layout: graphs (left) + infra (right)
+	leftWidth := m.ctx.ContentWidth * 55 / 100
+	rightWidth := m.ctx.ContentWidth - leftWidth
+
+	var leftContent string
+	if m.graphMode {
+		leftContent = lipgloss.JoinVertical(lipgloss.Left,
+			m.rpsChart.View(),
+			"",
+			m.latencyChart.View(),
+		)
+	} else {
+		leftContent = m.stepper.View()
+	}
+
+	rightContent := m.renderInfraLivePanel()
+
+	left := lipgloss.NewStyle().Width(leftWidth).Render(leftContent)
+	right := lipgloss.NewStyle().Width(rightWidth).Render(rightContent)
+
+	sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
+	sections = append(sections, "")
+
+	// Health bar
+	sections = append(sections, m.renderHealthBar())
+	sections = append(sections, "")
+	sections = append(sections, m.footerComp.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderInfraLivePanel() string {
+	s := m.ctx.Styles
+	var lines []string
+
+	lines = append(lines, s.Header.Root.Render("─ Infrastructure "))
+	lines = append(lines, "")
+	lines = append(lines, m.cpuGauge.View())
+	lines = append(lines, m.memGauge.View())
+	lines = append(lines, "")
+
+	lines = append(lines, s.Common.BoldStyle.Render("Tasks"))
+	lines = append(lines, fmt.Sprintf("  Running: %d  Desired: %d",
+		m.liveSnapshot.TaskRunning, m.liveSnapshot.TaskDesired))
+	lines = append(lines, "")
+	lines = append(lines, s.Common.BoldStyle.Render("ASG"))
+	lines = append(lines, fmt.Sprintf("  Instances: %d  Desired: %d",
+		m.liveSnapshot.ASGInstances, m.liveSnapshot.ASGDesired))
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m Model) renderHealthBar() string {
+	s := m.ctx.Styles
+	var checks []string
+
+	// CPU check
+	cpuOK := true
+	for _, mr := range m.liveMetrics {
+		if mr.ID == "ecs_cpu" && mr.Peak != nil && *mr.Peak >= 90 {
+			cpuOK = false
+		}
+	}
+	if cpuOK {
+		checks = append(checks, s.Verdict.Pass.Render("✓ CPU < 90%"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ CPU ≥ 90%"))
+	}
+
+	// Task stability check
+	if m.liveSnapshot.TaskRunning >= m.preSnapshot.TaskRunning {
+		checks = append(checks, s.Verdict.Pass.Render("✓ Tasks stable"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ Tasks decreased"))
+	}
+
+	// 5xx check
+	has5xx := false
+	for _, mr := range m.liveMetrics {
+		if mr.ID == "alb_5xx" && mr.Peak != nil && *mr.Peak > 0 {
+			has5xx = true
+		}
+	}
+	if !has5xx {
+		checks = append(checks, s.Verdict.Pass.Render("✓ Zero 5xx"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ 5xx detected"))
+	}
+
+	return "  " + strings.Join(checks, "  ")
 }
