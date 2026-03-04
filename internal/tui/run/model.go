@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -371,41 +370,6 @@ func (m Model) fetchSnapshot(label string) tea.Cmd {
 	}
 }
 
-func (m Model) runK6() tea.Cmd {
-	cfg := k6runner.RunConfig{
-		TestFile:      m.app.TestFile,
-		Env:           m.app.Env,
-		ResultsPrefix: m.resultsPrefix,
-		ResultsDir:    m.app.ResultsDir,
-	}
-	if m.baseURL != "" {
-		cfg.BaseURL = m.baseURL
-	}
-
-	args := k6runner.BuildArgs(cfg)
-	env := k6runner.BuildEnv(cfg)
-
-	c := exec.Command("k6", args...)
-	c.Env = env
-
-	startTime := m.startTime
-
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		exitCode := 0
-		if err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			} else {
-				return errMsg{err: fmt.Errorf("k6 exec: %w", err)}
-			}
-		}
-		return k6DoneMsg{result: k6runner.RunResult{
-			ExitCode:  exitCode,
-			StartTime: startTime,
-			EndTime:   time.Now().UTC(),
-		}}
-	})
-}
 
 func (m Model) fetchAnalysis() tea.Cmd {
 	return func() tea.Msg {
@@ -835,46 +799,77 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 }
 
 func (m Model) viewLiveDashboard() string {
-	s := m.ctx.Styles
-	var sections []string
+	width := m.ctx.ContentWidth
+	switch {
+	case width >= 120:
+		return m.viewLiveSplit()
+	case width >= 80:
+		return m.viewLiveStacked()
+	default:
+		return m.viewLiveFallback()
+	}
+}
 
+func (m Model) viewLiveHeader() ([]string, string) {
+	var sections []string
 	sections = append(sections, m.headerComp.View(), "")
 
-	// Elapsed time
 	elapsed := time.Since(m.startTime)
 	mins := int(elapsed.Minutes())
 	secs := int(elapsed.Seconds()) % 60
-	sections = append(sections, s.Common.FaintTextStyle.Render(
-		fmt.Sprintf("  Elapsed: %dm %ds", mins, secs)))
-	sections = append(sections, "")
+	elapsedStr := m.ctx.Styles.Common.FaintTextStyle.Render(
+		fmt.Sprintf("  Elapsed: %dm %ds", mins, secs))
 
-	// Split layout: graphs (left) + infra (right)
-	leftWidth := m.ctx.ContentWidth * 55 / 100
-	rightWidth := m.ctx.ContentWidth - leftWidth
+	return sections, elapsedStr
+}
 
-	var leftContent string
+func (m Model) viewLiveGraphs() string {
 	if m.graphMode {
-		leftContent = lipgloss.JoinVertical(lipgloss.Left,
+		return lipgloss.JoinVertical(lipgloss.Left,
 			m.rpsChart.View(),
 			"",
 			m.latencyChart.View(),
 		)
-	} else {
-		leftContent = m.stepper.View()
 	}
+	return m.stepper.View()
+}
 
-	rightContent := m.renderInfraLivePanel()
+// viewLiveSplit renders side-by-side layout for wide terminals (>=120).
+func (m Model) viewLiveSplit() string {
+	sections, elapsedStr := m.viewLiveHeader()
+	sections = append(sections, elapsedStr, "")
 
-	left := lipgloss.NewStyle().Width(leftWidth).Render(leftContent)
-	right := lipgloss.NewStyle().Width(rightWidth).Render(rightContent)
+	leftWidth := m.ctx.ContentWidth * 55 / 100
+	rightWidth := m.ctx.ContentWidth - leftWidth
+
+	left := lipgloss.NewStyle().Width(leftWidth).Render(m.viewLiveGraphs())
+	right := lipgloss.NewStyle().Width(rightWidth).Render(m.renderInfraLivePanel())
 
 	sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
-	sections = append(sections, "")
+	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
 
-	// Health bar
-	sections = append(sections, m.renderHealthBar())
-	sections = append(sections, "")
-	sections = append(sections, m.footerComp.View())
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// viewLiveStacked renders vertical stack for medium terminals (>=80).
+func (m Model) viewLiveStacked() string {
+	sections, elapsedStr := m.viewLiveHeader()
+	sections = append(sections, elapsedStr, "")
+
+	sections = append(sections, m.viewLiveGraphs())
+	sections = append(sections, "", m.renderInfraLivePanel())
+	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// viewLiveFallback renders minimal view for narrow terminals (<80).
+func (m Model) viewLiveFallback() string {
+	sections, elapsedStr := m.viewLiveHeader()
+	sections = append(sections, elapsedStr, "")
+
+	sections = append(sections, m.stepper.View())
+	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
