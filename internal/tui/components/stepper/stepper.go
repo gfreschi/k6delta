@@ -28,6 +28,7 @@ type Step struct {
 	Detail    string
 	StartedAt time.Time
 	Duration  time.Duration
+	flash     bool // true for one render cycle after MarkDone
 }
 
 // Model is the stepper Bubble Tea model.
@@ -73,6 +74,7 @@ func (m *Model) MarkRunning(index int) {
 }
 
 // MarkDone sets the step to StepDone, assigns the detail text, and computes duration.
+// Sets flash flag for a bright completion indicator on the next render.
 func (m *Model) MarkDone(index int, detail string) {
 	if index >= 0 && index < len(m.steps) {
 		if !m.steps[index].StartedAt.IsZero() {
@@ -80,6 +82,7 @@ func (m *Model) MarkDone(index int, detail string) {
 		}
 		m.steps[index].Status = StepDone
 		m.steps[index].Detail = detail
+		m.steps[index].flash = true
 	}
 }
 
@@ -103,9 +106,10 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 func (m Model) View() string {
 	st := m.ctx.Styles.Stepper
 	cs := m.ctx.Styles.Common
+	ds := m.ctx.Styles.Delta
 	var b strings.Builder
 
-	for _, s := range m.steps {
+	for i, s := range m.steps {
 		switch s.Status {
 		case StepPending:
 			b.WriteString("  " + constants.IconPending + " " + st.Pending.Render(s.Name))
@@ -120,7 +124,12 @@ func (m Model) View() string {
 			}
 			b.WriteString(line)
 		case StepDone:
-			line := "  " + cs.CheckMark + " " + st.Done.Render(s.Name)
+			icon := cs.CheckMark
+			if s.flash {
+				icon = ds.BetterStrong.Render(constants.IconDone)
+				m.steps[i].flash = false
+			}
+			line := "  " + icon + " " + st.Done.Render(s.Name)
 			if s.Detail != "" {
 				line += ": " + st.Detail.Render(s.Detail)
 			}

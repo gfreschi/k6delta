@@ -82,7 +82,7 @@ type Model struct {
 func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, jsonOutput bool, outputFile string) Model {
 	ctx := tuictx.New(80, 24)
 
-	s := spinner.New(spinner.WithSpinner(spinner.Dot),
+	s := spinner.New(spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(lipgloss.NewStyle().Foreground(ctx.Theme.HeaderText)))
 
 	st := stepper.NewModel(ctx, "AWS credentials", "Current state", "CloudWatch metrics", "Scaling activities")
@@ -377,10 +377,15 @@ func (m *Model) resizeDashboardPanels() {
 	panelH := m.ctx.ContentHeight / 2
 	m.statePanel.SetDimensions(w, panelH)
 
-	metricsW := w * 55 / 100
-	eventsW := w - metricsW
-	m.metricsPanel.SetDimensions(metricsW, panelH)
-	m.eventsPanel.SetDimensions(eventsW, panelH)
+	if w >= 120 {
+		metricsW := w * 55 / 100
+		eventsW := w - metricsW
+		m.metricsPanel.SetDimensions(metricsW, panelH)
+		m.eventsPanel.SetDimensions(eventsW, panelH)
+	} else {
+		m.metricsPanel.SetDimensions(w, panelH)
+		m.eventsPanel.SetDimensions(w, panelH)
+	}
 }
 
 func (m Model) viewDashboard() string {
@@ -392,13 +397,22 @@ func (m Model) viewDashboard() string {
 	m.metricsPanel.SetFocused(m.focusMgr.IsFocused(1))
 	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
 
+	width := m.ctx.ContentWidth
 	stateView := m.statePanel.View()
-	middle := lipgloss.JoinHorizontal(lipgloss.Top,
-		m.metricsPanel.View(),
-		m.eventsPanel.View(),
-	)
 
-	return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
+	switch {
+	case width >= 120:
+		middle := lipgloss.JoinHorizontal(lipgloss.Top,
+			m.metricsPanel.View(),
+			m.eventsPanel.View(),
+		)
+		return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
+	case width >= 80:
+		return lipgloss.JoinVertical(lipgloss.Left,
+			stateView, m.metricsPanel.View(), m.eventsPanel.View())
+	default:
+		return m.renderRawDisplay()
+	}
 }
 
 func (m *Model) updateDashboardFocus() tea.Cmd {

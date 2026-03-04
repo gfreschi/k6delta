@@ -159,13 +159,17 @@ func (m Model) View() string {
 			s.Common.FaintTextStyle.Render(m.result.RunB.Start)),
 		"")
 
-	// Panels
-	if m.focusMgr != nil {
+	// Panels (responsive: panels at >=80, fallback text at <80)
+	width := m.ctx.ContentWidth
+	if m.focusMgr != nil && width >= 80 {
 		m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
 		m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
 
 		sections = append(sections, m.k6Panel.View())
 		sections = append(sections, m.infraPanel.View())
+	} else if m.focusMgr != nil {
+		// Compact fallback: render table content without panel borders
+		sections = append(sections, m.renderK6Table(), "", m.renderInfraTable())
 	}
 
 	// Summary + footer
@@ -402,12 +406,15 @@ func (m Model) formatDelta(delta, direction, metric string) string {
 		arrow = " " + constants.IconDown
 	}
 
+	// Only show direction word when terminal is wide enough
 	dirWord := ""
-	switch direction {
-	case "better":
-		dirWord = " better"
-	case "worse":
-		dirWord = " worse"
+	if m.ctx.ContentWidth >= 100 {
+		switch direction {
+		case "better":
+			dirWord = " better"
+		case "worse":
+			dirWord = " worse"
+		}
 	}
 
 	return style.Render(delta + arrow + dirWord)

@@ -140,7 +140,7 @@ type ProgressMsg struct {
 func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool) Model {
 	ctx := tuictx.New(80, 24)
 
-	s := spinner.New(spinner.WithSpinner(spinner.Dot))
+	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	s.Style = lipgloss.NewStyle().Foreground(ctx.Theme.HeaderText)
 
 	st := stepper.NewModel(ctx,
@@ -843,10 +843,17 @@ func (m *Model) resizeDashboardPanels() {
 
 	m.k6Panel.SetDimensions(w, panelH)
 
-	infraW := w * 55 / 100
-	eventsW := w - infraW
-	m.infraPanel.SetDimensions(infraW, panelH)
-	m.eventsPanel.SetDimensions(eventsW, panelH)
+	if w >= 120 {
+		// Split: infra + events side by side
+		infraW := w * 55 / 100
+		eventsW := w - infraW
+		m.infraPanel.SetDimensions(infraW, panelH)
+		m.eventsPanel.SetDimensions(eventsW, panelH)
+	} else {
+		// Stacked: full width
+		m.infraPanel.SetDimensions(w, panelH)
+		m.eventsPanel.SetDimensions(w, panelH)
+	}
 }
 
 func (m Model) viewReportDashboard() string {
@@ -858,16 +865,26 @@ func (m Model) viewReportDashboard() string {
 	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
 	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
 
+	width := m.ctx.ContentWidth
 	k6View := m.k6Panel.View()
-
-	middle := lipgloss.JoinHorizontal(lipgloss.Top,
-		m.infraPanel.View(),
-		m.eventsPanel.View(),
-	)
-
 	verdict := m.renderVerdictBar()
 
-	return lipgloss.JoinVertical(lipgloss.Left, k6View, middle, verdict)
+	switch {
+	case width >= 120:
+		// Split: infra + events side by side
+		middle := lipgloss.JoinHorizontal(lipgloss.Top,
+			m.infraPanel.View(),
+			m.eventsPanel.View(),
+		)
+		return lipgloss.JoinVertical(lipgloss.Left, k6View, middle, verdict)
+	case width >= 80:
+		// Stacked: all panels vertical
+		return lipgloss.JoinVertical(lipgloss.Left,
+			k6View, m.infraPanel.View(), m.eventsPanel.View(), verdict)
+	default:
+		// Fallback: static text
+		return m.renderReport()
+	}
 }
 
 func (m *Model) updateDashboardFocus() tea.Cmd {
