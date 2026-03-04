@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -125,6 +126,8 @@ type reportMsg struct {
 }
 type errMsg struct{ err error }
 type k6PointMsg struct{ point k6runner.K6Point }
+type exportDoneMsg struct{ path string }
+type openDoneMsg struct{ path string }
 
 // ProgressMsg is sent by the provider's OnProgress callback via tea.Program.Send.
 type ProgressMsg struct {
@@ -213,6 +216,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Keys.Up):
 				m.scrollFocusedPanel(-1)
 				return m, nil
+			case key.Matches(msg, keys.RunKeys.Export):
+				return m, m.exportReport()
+			case key.Matches(msg, keys.RunKeys.OpenHTML):
+				return m, m.openHTML()
 			case key.Matches(msg, keys.RunKeys.RawView):
 				m.rawMode = !m.rawMode
 				return m, nil
@@ -354,6 +361,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
 		m.initDashboard()
+		return m, nil
+
+	case exportDoneMsg:
+		m.footerComp.SetHints([]footer.KeyHint{
+			{Key: "q", Action: "quit"},
+			{Key: "tab", Action: "next panel"},
+			{Key: "\u2191\u2193", Action: "scroll"},
+			{Key: "e", Action: "export JSON"},
+			{Key: "o", Action: "open HTML"},
+			{Key: "r", Action: "raw view"},
+		})
+		return m, nil
+
+	case openDoneMsg:
 		return m, nil
 
 	case errMsg:
@@ -800,6 +821,8 @@ func (m *Model) initDashboard() {
 		{Key: "q", Action: "quit"},
 		{Key: "tab", Action: "next panel"},
 		{Key: "\u2191\u2193", Action: "scroll"},
+		{Key: "e", Action: "export JSON"},
+		{Key: "o", Action: "open HTML"},
 		{Key: "r", Action: "raw view"},
 	})
 }
@@ -1012,6 +1035,37 @@ func (m Model) renderVerdictBar() string {
 		b.WriteString("\n  " + icon + " " + reason)
 	}
 	return b.String()
+}
+
+func (m Model) exportReport() tea.Cmd {
+	return func() tea.Msg {
+		if m.report == nil {
+			return errMsg{err: fmt.Errorf("no report to export")}
+		}
+		path := m.reportPath
+		if err := report.WriteReport(m.report, path); err != nil {
+			return errMsg{err: err}
+		}
+		return exportDoneMsg{path: path}
+	}
+}
+
+func (m Model) openHTML() tea.Cmd {
+	return func() tea.Msg {
+		htmlPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")
+		if _, err := os.Stat(htmlPath); err != nil {
+			return errMsg{err: fmt.Errorf("HTML report not found: %s", htmlPath)}
+		}
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", htmlPath)
+		default:
+			cmd = exec.Command("xdg-open", htmlPath)
+		}
+		_ = cmd.Start() // fire and forget
+		return openDoneMsg{path: htmlPath}
+	}
 }
 
 func fmtIntPtr(v *int) string {

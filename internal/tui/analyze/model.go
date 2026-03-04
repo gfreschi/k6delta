@@ -8,17 +8,23 @@ import (
 	"os"
 	"time"
 
+	"strings"
+
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/config"
 	"github.com/gfreschi/k6delta/internal/provider"
+	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
+	"github.com/gfreschi/k6delta/internal/tui/keys"
 )
 
 type analyzePhase int
@@ -63,6 +69,13 @@ type Model struct {
 	spinner  spinner.Model
 	err      error
 	quitting bool
+
+	// Dashboard state (active in phaseDisplay)
+	focusMgr     *focus.Manager
+	statePanel   panel.Model
+	metricsPanel panel.Model
+	eventsPanel  panel.Model
+	rawMode      bool
 }
 
 // NewModel creates a new analyze TUI model.
@@ -116,6 +129,29 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if m.phase == phaseDisplay {
+			switch {
+			case key.Matches(msg, keys.Keys.NextPanel):
+				m.focusMgr.Next()
+				return m, nil
+			case key.Matches(msg, keys.Keys.PrevPanel):
+				m.focusMgr.Prev()
+				return m, nil
+			case key.Matches(msg, keys.Keys.Down):
+				m.scrollFocusedPanel(1)
+				return m, nil
+			case key.Matches(msg, keys.Keys.Up):
+				m.scrollFocusedPanel(-1)
+				return m, nil
+			case key.Matches(msg, keys.AnalyzeKeys.Export):
+				if m.outputFile != "" {
+					if err := m.writeOutputFile(); err != nil {
+						m.err = err
+					}
+				}
+				return m, nil
+			}
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			m.quitting = true
@@ -127,6 +163,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.headerComp.UpdateContext(m.ctx)
 		m.stepper.UpdateContext(m.ctx)
 		m.footerComp.UpdateContext(m.ctx)
+		if m.focusMgr != nil {
+			m.statePanel.UpdateContext(m.ctx)
+			m.metricsPanel.UpdateContext(m.ctx)
+			m.eventsPanel.UpdateContext(m.ctx)
+			m.resizeDashboardPanels()
+		}
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -170,6 +212,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			len(msg.activities.ECSScaling), len(msg.activities.ASGScaling), len(msg.activities.Alarms))
 		m.stepper.MarkDone(stepActivities, detail)
 		m.phase = phaseDisplay
+		m.initDashboard()
 
 		if m.outputFile != "" {
 			if err := m.writeOutputFile(); err != nil {
@@ -280,18 +323,106 @@ func (m Model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
-	// Current State
-	sections = append(sections, s.Header.Root.Render("Current State"), "")
-	sections = append(sections, fmt.Sprintf("  ECS Tasks:  running=%d  desired=%d",
+	sections = append(sections, m.viewDashboard())
+
+	if m.outputFile != "" && m.err == nil {
+		sections = append(sections, s.Common.SuccessStyle.Render(fmt.Sprintf("JSON report written to: %s", m.outputFile)))
+	}
+
+	sections = append(sections, "", m.footerComp.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+// --- Dashboard ---
+
+func (m *Model) initDashboard() {
+	w := m.ctx.ContentWidth
+	panelH := m.ctx.ContentHeight / 2
+
+	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, panelH)
+	m.statePanel.SetContent(m.renderStateContent())
+
+	metricsW := w * 55 / 100
+	eventsW := w - metricsW
+
+	m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, panelH)
+	m.metricsPanel.SetContent(m.renderMetricsContent())
+
+	m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, panelH)
+	m.eventsPanel.SetContent(m.renderActivitiesContent())
+
+	m.focusMgr = focus.New(3)
+
+	m.footerComp.SetHints([]footer.KeyHint{
+		{Key: "q", Action: "quit"},
+		{Key: "tab", Action: "next panel"},
+		{Key: "\u2191\u2193", Action: "scroll"},
+		{Key: "e", Action: "export JSON"},
+	})
+}
+
+func (m *Model) resizeDashboardPanels() {
+	w := m.ctx.ContentWidth
+	panelH := m.ctx.ContentHeight / 2
+	m.statePanel.SetDimensions(w, panelH)
+
+	metricsW := w * 55 / 100
+	eventsW := w - metricsW
+	m.metricsPanel.SetDimensions(metricsW, panelH)
+	m.eventsPanel.SetDimensions(eventsW, panelH)
+}
+
+func (m Model) viewDashboard() string {
+	if m.rawMode {
+		return m.renderRawDisplay()
+	}
+
+	m.statePanel.SetFocused(m.focusMgr.IsFocused(0))
+	m.metricsPanel.SetFocused(m.focusMgr.IsFocused(1))
+	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
+
+	stateView := m.statePanel.View()
+	middle := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.metricsPanel.View(),
+		m.eventsPanel.View(),
+	)
+
+	return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
+}
+
+func (m *Model) scrollFocusedPanel(dir int) {
+	var p *panel.Model
+	switch m.focusMgr.Current() {
+	case 0:
+		p = &m.statePanel
+	case 1:
+		p = &m.metricsPanel
+	case 2:
+		p = &m.eventsPanel
+	}
+	if p == nil {
+		return
+	}
+	if dir > 0 {
+		p.ScrollDown()
+	} else {
+		p.ScrollUp()
+	}
+}
+
+func (m Model) renderStateContent() string {
+	var lines []string
+	lines = append(lines, fmt.Sprintf("ECS Tasks:  running=%d  desired=%d",
 		m.snapshot.TaskRunning, m.snapshot.TaskDesired))
 	if m.snapshot.ASGName != "" {
-		sections = append(sections, fmt.Sprintf("  ASG:        in_service=%d  desired=%d",
+		lines = append(lines, fmt.Sprintf("ASG:        in_service=%d  desired=%d",
 			m.snapshot.ASGInstances, m.snapshot.ASGDesired))
 	}
-	sections = append(sections, "")
+	return strings.Join(lines, "\n")
+}
 
-	// Metrics
-	sections = append(sections, s.Header.Root.Render("Metrics"))
+func (m Model) renderMetricsContent() string {
 	var metricRows []table.Row
 	for _, mr := range m.metrics {
 		if mr.Peak == nil || mr.Avg == nil {
@@ -310,57 +441,72 @@ func (m Model) View() string {
 		{Title: "Points", Width: 8, Align: lipgloss.Right},
 	})
 	metricTbl.SetRows(metricRows)
-	sections = append(sections, metricTbl.View(), "")
+	return metricTbl.View()
+}
 
-	// Scaling Activities
-	sections = append(sections, s.Header.Root.Render("Scaling Activities"), "")
-	hasActivities := len(m.activities.ECSScaling) > 0 || len(m.activities.ASGScaling) > 0
-	if hasActivities {
-		if len(m.activities.ECSScaling) > 0 {
-			sections = append(sections, s.Common.FaintTextStyle.Render("  ECS Task Scaling:"))
-			for _, a := range m.activities.ECSScaling {
-				desc := a.Description
-				if desc == "" {
-					desc = a.Cause
-				}
-				sections = append(sections, fmt.Sprintf("    %s  %s  %s", a.Time, a.Status, desc))
+func (m Model) renderActivitiesContent() string {
+	var lines []string
+
+	if len(m.activities.ECSScaling) > 0 {
+		lines = append(lines, "ECS Task Scaling:")
+		for _, a := range m.activities.ECSScaling {
+			desc := a.Description
+			if desc == "" {
+				desc = a.Cause
 			}
-			sections = append(sections, "")
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s", a.Time, a.Status, desc))
 		}
-		if len(m.activities.ASGScaling) > 0 {
-			sections = append(sections, s.Common.FaintTextStyle.Render("  ASG Scaling:"))
-			for _, a := range m.activities.ASGScaling {
-				desc := a.Description
-				if desc == "" {
-					desc = a.Cause
-				}
-				sections = append(sections, fmt.Sprintf("    %s  %s  %s", a.Time, a.Status, desc))
-			}
-			sections = append(sections, "")
-		}
-	} else {
-		sections = append(sections, s.Common.FaintTextStyle.Render("  No scaling activities during test window"), "")
 	}
-
-	// Alarm History
+	if len(m.activities.ASGScaling) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, "ASG Scaling:")
+		for _, a := range m.activities.ASGScaling {
+			desc := a.Description
+			if desc == "" {
+				desc = a.Cause
+			}
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s", a.Time, a.Status, desc))
+		}
+	}
 	if len(m.activities.Alarms) > 0 {
-		sections = append(sections, s.Header.Root.Render("Alarm History"), "")
-		for _, a := range m.activities.Alarms {
-			sections = append(sections, fmt.Sprintf("  %s  %s  %s -> %s", a.Time, a.AlarmName, a.OldState, a.NewState))
+		if len(lines) > 0 {
+			lines = append(lines, "")
 		}
-		sections = append(sections, "")
+		lines = append(lines, "Alarm History:")
+		for _, a := range m.activities.Alarms {
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s -> %s", a.Time, a.AlarmName, a.OldState, a.NewState))
+		}
 	}
 
-	if m.outputFile != "" && m.err == nil {
-		sections = append(sections, s.Common.SuccessStyle.Render(fmt.Sprintf("JSON report written to: %s", m.outputFile)), "")
+	if len(lines) == 0 {
+		return "No scaling activities during test window"
 	}
+	return strings.Join(lines, "\n")
+}
 
-	sections = append(sections, m.footerComp.View())
+func (m Model) renderRawDisplay() string {
+	s := m.ctx.Styles
+	var sections []string
+
+	sections = append(sections, s.Header.Root.Render("Current State"), "")
+	sections = append(sections, fmt.Sprintf("  ECS Tasks:  running=%d  desired=%d",
+		m.snapshot.TaskRunning, m.snapshot.TaskDesired))
+	if m.snapshot.ASGName != "" {
+		sections = append(sections, fmt.Sprintf("  ASG:        in_service=%d  desired=%d",
+			m.snapshot.ASGInstances, m.snapshot.ASGDesired))
+	}
+	sections = append(sections, "")
+
+	sections = append(sections, s.Header.Root.Render("Metrics"))
+	sections = append(sections, m.renderMetricsContent(), "")
+
+	sections = append(sections, s.Header.Root.Render("Scaling Activities"), "")
+	sections = append(sections, m.renderActivitiesContent())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
-
-// --- View helpers ---
 
 // --- JSON output ---
 

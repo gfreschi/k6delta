@@ -70,12 +70,12 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 
 // ScrollDown scrolls the viewport down one line.
 func (m *Model) ScrollDown() {
-	m.viewport.LineDown(1)
+	m.viewport.ScrollDown(1)
 }
 
 // ScrollUp scrolls the viewport up one line.
 func (m *Model) ScrollUp() {
-	m.viewport.LineUp(1)
+	m.viewport.ScrollUp(1)
 }
 
 // ScrollPosition returns the current scroll offset and total content lines.
@@ -106,17 +106,9 @@ func (m Model) View() string {
 }
 
 func bodyHeight(panelHeight int) int {
-	h := panelHeight - 3 // border (2) + title (1)
-	if h < 1 {
-		h = 1
-	}
-	return h
+	return max(panelHeight-3, 1) // border (2) + title (1)
 }
 
 func bodyWidth(panelWidth int) int {
-	w := panelWidth - 2 // border (2)
-	if w < 1 {
-		w = 1
-	}
-	return w
+	return max(panelWidth-2, 1) // border (2)
 }
