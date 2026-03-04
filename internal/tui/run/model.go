@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -18,13 +19,16 @@ import (
 	k6runner "github.com/gfreschi/k6delta/internal/k6"
 	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/report"
+	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
 	"github.com/gfreschi/k6delta/internal/tui/components/linechart"
+	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
+	"github.com/gfreschi/k6delta/internal/tui/keys"
 )
 
 type runPhase int
@@ -80,6 +84,13 @@ type Model struct {
 	spinner  spinner.Model
 	err      error
 	quitting bool
+
+	// Report dashboard state (active in phaseDone)
+	focusMgr    *focus.Manager
+	k6Panel     panel.Model
+	infraPanel  panel.Model
+	eventsPanel panel.Model
+	rawMode     bool
 
 	// Live dashboard state
 	streamingSupported bool
@@ -188,6 +199,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if m.currentPhase == phaseDone {
+			switch {
+			case key.Matches(msg, keys.Keys.NextPanel):
+				m.focusMgr.Next()
+				return m, nil
+			case key.Matches(msg, keys.Keys.PrevPanel):
+				m.focusMgr.Prev()
+				return m, nil
+			case key.Matches(msg, keys.Keys.Down):
+				m.scrollFocusedPanel(1)
+				return m, nil
+			case key.Matches(msg, keys.Keys.Up):
+				m.scrollFocusedPanel(-1)
+				return m, nil
+			case key.Matches(msg, keys.RunKeys.RawView):
+				m.rawMode = !m.rawMode
+				return m, nil
+			}
+		}
 		switch msg.String() {
 		case "q", "ctrl+c":
 			if m.k6Cancel != nil {
@@ -207,6 +237,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cpuGauge.UpdateContext(m.ctx)
 		m.reservGauge.UpdateContext(m.ctx)
 		m.memGauge.UpdateContext(m.ctx)
+		if m.focusMgr != nil {
+			m.k6Panel.UpdateContext(m.ctx)
+			m.infraPanel.UpdateContext(m.ctx)
+			m.eventsPanel.UpdateContext(m.ctx)
+			m.resizeDashboardPanels()
+		}
 		return m, nil
 
 	case spinner.TickMsg:
@@ -317,6 +353,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reportPath = msg.path
 		m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
+		m.initDashboard()
 		return m, nil
 
 	case errMsg:
@@ -355,7 +392,7 @@ func (m Model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
-	sections = append(sections, m.renderReport(), "")
+	sections = append(sections, m.viewReportDashboard(), "")
 	sections = append(sections, m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -737,6 +774,251 @@ func fmtMetricValue(id string, v float64) string {
 	default:
 		return fmt.Sprintf("%.1f%%", v)
 	}
+}
+
+// --- Report Dashboard ---
+
+func (m *Model) initDashboard() {
+	w := m.ctx.ContentWidth
+	panelH := m.ctx.ContentHeight / 2
+
+	m.k6Panel = panel.NewModel(m.ctx, "k6 Summary [1]", w, panelH)
+	m.k6Panel.SetContent(m.renderK6SummaryGrid())
+
+	infraW := w * 55 / 100
+	eventsW := w - infraW
+
+	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", infraW, panelH)
+	m.infraPanel.SetContent(m.renderInfraTable())
+
+	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [3]", eventsW, panelH)
+	m.eventsPanel.SetContent(m.renderEventsList())
+
+	m.focusMgr = focus.New(3)
+
+	m.footerComp.SetHints([]footer.KeyHint{
+		{Key: "q", Action: "quit"},
+		{Key: "tab", Action: "next panel"},
+		{Key: "\u2191\u2193", Action: "scroll"},
+		{Key: "r", Action: "raw view"},
+	})
+}
+
+func (m *Model) resizeDashboardPanels() {
+	w := m.ctx.ContentWidth
+	panelH := m.ctx.ContentHeight / 2
+
+	m.k6Panel.SetDimensions(w, panelH)
+
+	infraW := w * 55 / 100
+	eventsW := w - infraW
+	m.infraPanel.SetDimensions(infraW, panelH)
+	m.eventsPanel.SetDimensions(eventsW, panelH)
+}
+
+func (m Model) viewReportDashboard() string {
+	if m.rawMode {
+		return m.renderReport()
+	}
+
+	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
+	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
+	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
+
+	k6View := m.k6Panel.View()
+
+	middle := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.infraPanel.View(),
+		m.eventsPanel.View(),
+	)
+
+	verdict := m.renderVerdictBar()
+
+	return lipgloss.JoinVertical(lipgloss.Left, k6View, middle, verdict)
+}
+
+func (m *Model) scrollFocusedPanel(dir int) {
+	var p *panel.Model
+	switch m.focusMgr.Current() {
+	case 0:
+		p = &m.k6Panel
+	case 1:
+		p = &m.infraPanel
+	case 2:
+		p = &m.eventsPanel
+	}
+	if p == nil {
+		return
+	}
+	if dir > 0 {
+		p.ScrollDown()
+	} else {
+		p.ScrollUp()
+	}
+}
+
+func (m Model) renderK6SummaryGrid() string {
+	if m.report == nil || m.report.K6 == nil {
+		return "No k6 data available"
+	}
+	k := m.report.K6
+	s := m.ctx.Styles
+
+	type pair struct{ left, right string }
+	rows := []pair{
+		{
+			s.Table.Label.Render("p95 latency") + "  " + fmtFloatMs(k.P95ms),
+			s.Table.Label.Render("Throughput") + "  " + fmtFloatRate(k.RPSAvg),
+		},
+		{
+			s.Table.Label.Render("p90 latency") + "  " + fmtFloatMs(k.P90ms),
+			s.Table.Label.Render("Error rate") + "  " + fmtPct(k.ErrorRate),
+		},
+		{
+			s.Table.Label.Render("Checks") + "  " + fmtPctRate(k.ChecksRate),
+			s.Table.Label.Render("VUs max") + "  " + fmtIntPtr(k.VUsMax),
+		},
+		{
+			s.Table.Label.Render("Total reqs") + "  " + fmtIntPtr(k.TotalRequests),
+			s.Table.Label.Render("Thresholds") + "  " + fmt.Sprintf("%d passed, %d failed", k.Thresholds.Passed, k.Thresholds.Failed),
+		},
+	}
+
+	var b strings.Builder
+	colWidth := m.ctx.ContentWidth / 2
+	for _, r := range rows {
+		left := lipgloss.NewStyle().Width(colWidth).Render(r.left)
+		right := lipgloss.NewStyle().Width(colWidth).Render(r.right)
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, right))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (m Model) renderInfraTable() string {
+	s := m.ctx.Styles
+	var lines []string
+
+	// Snapshot deltas
+	lines = append(lines,
+		fmt.Sprintf("%s  %d -> %d  %s",
+			s.Table.Label.Render("ECS tasks"),
+			m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning,
+			fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning)),
+		fmt.Sprintf("%s  %d -> %d  %s",
+			s.Table.Label.Render("EC2 instances"),
+			m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances,
+			fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances)),
+		"",
+	)
+
+	// CloudWatch peaks
+	for _, mr := range m.metrics {
+		label := metricLabel(mr.ID)
+		if label == "" {
+			continue
+		}
+		if mr.Peak != nil && mr.Avg != nil {
+			lines = append(lines, fmt.Sprintf("%s  peak=%s  avg=%s",
+				s.Table.Label.Render(label),
+				fmtMetricValue(mr.ID, *mr.Peak),
+				fmtMetricValue(mr.ID, *mr.Avg)))
+		}
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderEventsList() string {
+	var lines []string
+
+	if len(m.activities.ECSScaling) > 0 {
+		for _, ev := range m.activities.ECSScaling {
+			lines = append(lines, fmt.Sprintf("[%s] %s", ev.Time, ev.Description))
+		}
+	}
+	if len(m.activities.ASGScaling) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		for _, ev := range m.activities.ASGScaling {
+			lines = append(lines, fmt.Sprintf("[%s] %s %s", ev.Time, ev.Status, ev.Cause))
+		}
+	}
+	if len(m.activities.Alarms) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		for _, a := range m.activities.Alarms {
+			lines = append(lines, fmt.Sprintf("[%s] %s: %s -> %s", a.Time, a.AlarmName, a.OldState, a.NewState))
+		}
+	}
+
+	if len(lines) == 0 {
+		return "No scaling events recorded"
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderVerdictBar() string {
+	s := m.ctx.Styles
+
+	k6Exit := 0
+	if m.k6Result != nil {
+		k6Exit = m.k6Result.ExitCode
+	}
+	alb5xx := 0
+	var ecsCPUPeak *float64
+	for _, mr := range m.metrics {
+		switch mr.ID {
+		case "alb_5xx":
+			if mr.Peak != nil {
+				alb5xx = int(*mr.Peak)
+			}
+		case "ecs_cpu":
+			ecsCPUPeak = mr.Peak
+		}
+	}
+
+	v := computeVerdict(verdictInput{
+		k6Exit:      k6Exit,
+		alb5xx:      alb5xx,
+		ecsCPUPeak:  ecsCPUPeak,
+		tasksBefore: m.preSnapshot.TaskRunning,
+		tasksAfter:  m.postSnapshot.TaskRunning,
+		activities:  m.activities,
+	})
+
+	var verdictStyle lipgloss.Style
+	switch v.level {
+	case verdictFail:
+		verdictStyle = s.Verdict.Fail
+	case verdictWarn:
+		verdictStyle = s.Verdict.Warn
+	default:
+		verdictStyle = s.Verdict.Pass
+	}
+
+	var b strings.Builder
+	b.WriteString("  " + s.Common.BoldStyle.Render("Verdict: ") + verdictStyle.Render(v.level.String()))
+	for _, reason := range v.reasons {
+		icon := "\u2713"
+		switch v.level {
+		case verdictFail:
+			icon = "\u2717"
+		case verdictWarn:
+			icon = "\u26a0"
+		}
+		b.WriteString("\n  " + icon + " " + reason)
+	}
+	return b.String()
+}
+
+func fmtIntPtr(v *int) string {
+	if v == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d", *v)
 }
 
 // --- Live Dashboard ---
