@@ -20,6 +20,23 @@ type k6Threshold struct {
 	OK bool `json:"ok"`
 }
 
+// UnmarshalJSON handles both k6 formats: bool (--summary-export) and {"ok": bool} (handleSummary).
+func (t *k6Threshold) UnmarshalJSON(data []byte) error {
+	var ok bool
+	if err := json.Unmarshal(data, &ok); err == nil {
+		t.OK = ok
+		return nil
+	}
+	var raw struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	t.OK = raw.OK
+	return nil
+}
+
 // ParseK6Summary reads a k6 JSON summary file and extracts key metrics.
 func ParseK6Summary(path string) (*K6Metrics, error) {
 	data, err := os.ReadFile(path)

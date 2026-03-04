@@ -1,0 +1,47 @@
+{
+  "metrics": {
+    "http_req_duration": {
+      "values": {
+        "avg": 120.5,
+        "min": 15.0,
+        "max": 600.0,
+        "med": 90.0,
+        "p(90)": 250.0,
+        "p(95)": 350.0
+      },
+      "thresholds": {
+        "p(95)<3000": true
+      }
+    },
+    "http_req_failed": {
+      "values": {
+        "rate": 0.005,
+        "passes": 995,
+        "fails": 5
+      },
+      "thresholds": {
+        "rate<0.01": true
+      }
+    },
+    "checks": {
+      "values": {
+        "rate": 0.995,
+        "passes": 995,
+        "fails": 5
+      }
+    },
+    "http_reqs": {
+      "values": {
+        "count": 2000,
+        "rate": 65.0
+      }
+    },
+    "vus_max": {
+      "values": {
+        "max": 20,
+        "min": 0,
+        "value": 20
+      }
+    }
+  }
+}

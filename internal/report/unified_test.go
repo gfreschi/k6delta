@@ -38,6 +38,26 @@ func TestParseK6SummaryThresholds(t *testing.T) {
 	}
 }
 
+func TestParseK6SummaryExportFormat(t *testing.T) {
+	fixture := filepath.Join("testdata", "k6-summary-export.json")
+	k6, err := ParseK6Summary(fixture)
+	if err != nil {
+		t.Fatalf("ParseK6Summary(%q) returned unexpected error: %v", fixture, err)
+	}
+
+	assertFloatPtr(t, "P95ms", k6.P95ms, 350.0)
+	assertFloatPtr(t, "P90ms", k6.P90ms, 250.0)
+	assertFloatPtr(t, "ErrorRate", k6.ErrorRate, 0.005)
+	assertIntPtr(t, "TotalRequests", k6.TotalRequests, 2000)
+
+	if k6.Thresholds.Passed != 2 {
+		t.Errorf("Thresholds.Passed = %d, want 2", k6.Thresholds.Passed)
+	}
+	if k6.Thresholds.Failed != 0 {
+		t.Errorf("Thresholds.Failed = %d, want 0", k6.Thresholds.Failed)
+	}
+}
+
 func TestBuildUnifiedReport(t *testing.T) {
 	fixture := filepath.Join("testdata", "k6-summary.json")
 

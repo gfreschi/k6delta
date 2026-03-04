@@ -1034,7 +1034,11 @@ func (m *Model) scrollFocusedPanel(dir int) {
 
 func (m Model) renderK6SummaryGrid() string {
 	if m.report == nil || m.report.K6 == nil {
-		return "No k6 data available"
+		if m.k6Result != nil && m.k6Result.ExitCode != 0 {
+			return m.ctx.Styles.Common.FaintTextStyle.Render(
+				fmt.Sprintf("k6 exited with code %d \u2014 no summary data available", m.k6Result.ExitCode))
+		}
+		return m.ctx.Styles.Common.FaintTextStyle.Render("No k6 data available")
 	}
 	k := m.report.K6
 	s := m.ctx.Styles
@@ -1072,6 +1076,11 @@ func (m Model) renderK6SummaryGrid() string {
 
 func (m Model) renderInfraTable() string {
 	s := m.ctx.Styles
+
+	if len(m.metrics) == 0 && m.preSnapshot.TaskRunning == 0 && m.postSnapshot.TaskRunning == 0 {
+		return s.Common.FaintTextStyle.Render("Infrastructure metrics pending")
+	}
+
 	var lines []string
 
 	// Snapshot deltas
