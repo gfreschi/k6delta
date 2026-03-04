@@ -32,6 +32,9 @@ func TestLineChart_emptyData(t *testing.T) {
 	if view == "" {
 		t.Error("expected non-empty view even without data")
 	}
+	if !strings.Contains(view, "waiting for data") {
+		t.Error("expected 'waiting for data' message in empty chart view")
+	}
 }
 
 func TestLineChart_autoScalesYAxis(t *testing.T) {

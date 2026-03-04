@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -81,18 +82,20 @@ type Model struct {
 	quitting bool
 
 	// Live dashboard state
-	liveMode     bool
-	graphMode    bool
-	k6PointChan  chan k6runner.K6Point
-	k6Cancel     context.CancelFunc
-	rpsChart     linechart.Model
-	latencyChart linechart.Model
-	cpuGauge     gauge.Model
-	memGauge     gauge.Model
-	liveSnapshot provider.Snapshot
-	liveMetrics  []provider.MetricResult
-	liveRPSCount int
-	liveRPSTime  time.Time
+	streamingSupported bool
+	liveMode           bool
+	graphMode          bool
+	k6PointChan        chan k6runner.K6Point
+	k6Cancel           context.CancelFunc
+	rpsChart           linechart.Model
+	latencyChart       linechart.Model
+	cpuGauge           gauge.Model
+	memGauge           gauge.Model
+	reservGauge        gauge.Model
+	liveSnapshot       provider.Snapshot
+	liveMetrics        []provider.MetricResult
+	liveRPSCount       int
+	liveRPSTime        time.Time
 }
 
 type authOKMsg struct{}
@@ -142,23 +145,27 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 
 	prefix := k6runner.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
 
+	canStream, _ := k6runner.SupportsJSONStreaming()
+
 	return Model{
-		app:           app,
-		provider:      prov,
-		baseURL:       baseURL,
-		skipAnalyze:   skipAnalyze,
-		ctx:           ctx,
-		currentPhase:  phaseInit,
-		stepper:       st,
-		headerComp:    hdr,
-		footerComp:    ftr,
-		resultsPrefix: prefix,
-		spinner:       s,
-		graphMode:     true,
-		rpsChart:      linechart.NewModel(ctx, "Throughput", "req/s", 40, 8),
-		latencyChart:  linechart.NewModel(ctx, "Latency", "ms", 40, 8),
-		cpuGauge:      gauge.NewModel(ctx, "CPU", 30),
-		memGauge:      gauge.NewModel(ctx, "Memory", 30),
+		app:                app,
+		provider:           prov,
+		baseURL:            baseURL,
+		skipAnalyze:        skipAnalyze,
+		ctx:                ctx,
+		currentPhase:       phaseInit,
+		stepper:            st,
+		headerComp:         hdr,
+		footerComp:         ftr,
+		resultsPrefix:      prefix,
+		spinner:            s,
+		streamingSupported: canStream,
+		graphMode:          true,
+		rpsChart:           linechart.NewModel(ctx, "Throughput", "req/s", 40, 8),
+		latencyChart:       linechart.NewModel(ctx, "Latency", "ms", 40, 8),
+		cpuGauge:           gauge.NewModel(ctx, "CPU", 30),
+		memGauge:           gauge.NewModel(ctx, "Memory", 30),
+		reservGauge:        gauge.NewModel(ctx, "Reserv", 30),
 	}
 }
 
@@ -198,6 +205,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.rpsChart.UpdateContext(m.ctx)
 		m.latencyChart.UpdateContext(m.ctx)
 		m.cpuGauge.UpdateContext(m.ctx)
+		m.reservGauge.UpdateContext(m.ctx)
 		m.memGauge.UpdateContext(m.ctx)
 		return m, nil
 
@@ -228,6 +236,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stepper.MarkRunning(stepK6)
 			m.currentPhase = phaseK6Run
 			m.startTime = time.Now().UTC()
+
+			if !m.streamingSupported {
+				return m, m.runK6Fallback()
+			}
 
 			// Start streaming k6 with live dashboard
 			m.k6PointChan = make(chan k6runner.K6Point, 256)
@@ -794,6 +806,8 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 			m.cpuGauge.SetValue(latest, 100.0)
 		case "ecs_memory":
 			m.memGauge.SetValue(latest, 100.0)
+		case "capacity_provider_reservation":
+			m.reservGauge.SetValue(latest, 100.0)
 		}
 	}
 }
@@ -882,6 +896,7 @@ func (m Model) renderInfraLivePanel() string {
 	lines = append(lines, "")
 	lines = append(lines, m.cpuGauge.View())
 	lines = append(lines, m.memGauge.View())
+	lines = append(lines, m.reservGauge.View())
 	lines = append(lines, "")
 
 	lines = append(lines, s.Common.BoldStyle.Render("Tasks"))
@@ -933,4 +948,42 @@ func (m Model) renderHealthBar() string {
 	}
 
 	return "  " + strings.Join(checks, "  ")
+}
+
+// runK6Fallback hands the terminal to k6 via tea.ExecProcess (no live dashboard).
+// Used when k6 JSON streaming is not available.
+func (m Model) runK6Fallback() tea.Cmd {
+	cfg := k6runner.RunConfig{
+		TestFile:      m.app.TestFile,
+		Env:           m.app.Env,
+		ResultsPrefix: m.resultsPrefix,
+		ResultsDir:    m.app.ResultsDir,
+	}
+	if m.baseURL != "" {
+		cfg.BaseURL = m.baseURL
+	}
+
+	args := k6runner.BuildArgs(cfg)
+	env := k6runner.BuildEnv(cfg)
+
+	c := exec.Command("k6", args...)
+	c.Env = env
+
+	startTime := m.startTime
+
+	return tea.ExecProcess(c, func(err error) tea.Msg {
+		exitCode := 0
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				return errMsg{err: fmt.Errorf("k6 exec: %w", err)}
+			}
+		}
+		return k6DoneMsg{result: k6runner.RunResult{
+			ExitCode:  exitCode,
+			StartTime: startTime,
+			EndTime:   time.Now().UTC(),
+		}}
+	})
 }
