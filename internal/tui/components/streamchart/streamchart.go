@@ -20,18 +20,12 @@ type Model struct {
 
 // NewModel creates a streaming chart with braille rendering.
 func NewModel(ctx *tuictx.ProgramContext, title, unit string, width, height int) Model {
-	axisStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.FaintText)
-	labelStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.FaintText)
-	lineStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.PrimaryText)
-
+	cs := ctx.Styles.Chart
 	chart := tslc.New(width, height,
 		tslc.WithXLabelFormatter(tslc.HourTimeLabelFormatter()),
 		tslc.WithUpdateHandler(tslc.SecondNoZoomUpdateHandler(10)),
-		tslc.WithAxesStyles(axisStyle, labelStyle),
-		tslc.WithStyle(lineStyle),
+		tslc.WithAxesStyles(cs.Axis, cs.Label),
+		tslc.WithStyle(cs.Line),
 		tslc.WithLineStyle(runes.ArcLineStyle),
 	)
 

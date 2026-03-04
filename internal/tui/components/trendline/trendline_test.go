@@ -7,7 +7,7 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
-func TestNewModel(t *testing.T) {
+func TestNewModel_viewNonEmpty(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := trendline.NewModel(ctx, 25, 1)
 
@@ -16,7 +16,7 @@ func TestNewModel(t *testing.T) {
 	}
 }
 
-func TestPush(t *testing.T) {
+func TestPush_viewNonEmpty(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := trendline.NewModel(ctx, 25, 1)
 
@@ -30,7 +30,7 @@ func TestPush(t *testing.T) {
 	}
 }
 
-func TestResize(t *testing.T) {
+func TestResize_viewNonEmpty(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := trendline.NewModel(ctx, 25, 1)
 
@@ -40,5 +40,32 @@ func TestResize(t *testing.T) {
 	view := m.View()
 	if view == "" {
 		t.Error("View() should work after resize")
+	}
+}
+
+func TestSetMax(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := trendline.NewModel(ctx, 25, 1)
+
+	m.SetMax(200.0)
+	m.Push(150.0)
+
+	view := m.View()
+	if view == "" {
+		t.Error("View() should work after SetMax + Push")
+	}
+}
+
+func TestUpdateContext(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := trendline.NewModel(ctx, 25, 1)
+
+	ctx2 := tuictx.New(80, 24)
+	m.UpdateContext(ctx2)
+
+	m.Push(50.0)
+	view := m.View()
+	if view == "" {
+		t.Error("View() should work after UpdateContext + Push")
 	}
 }

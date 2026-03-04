@@ -1,6 +1,7 @@
 package timechart_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,16 +9,20 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
-func TestNewModel(t *testing.T) {
+func TestNewModel_viewContainsTitleAndUnit(t *testing.T) {
 	ctx := tuictx.New(120, 40)
-	m := timechart.NewModel(ctx, "Throughput", "req/s", 60, 12)
+	m := timechart.NewModel(ctx, "Latency", "ms", 60, 12)
 
-	if m.View() == "" {
-		t.Error("View() should return non-empty string")
+	view := m.View()
+	if !strings.Contains(view, "Latency") {
+		t.Error("View() should contain title 'Latency'")
+	}
+	if !strings.Contains(view, "ms") {
+		t.Error("View() should contain unit 'ms'")
 	}
 }
 
-func TestSetData(t *testing.T) {
+func TestSetData_viewNonEmpty(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := timechart.NewModel(ctx, "Latency", "ms", 60, 12)
 
@@ -33,7 +38,7 @@ func TestSetData(t *testing.T) {
 	}
 }
 
-func TestSetDataMismatchedLengths(t *testing.T) {
+func TestSetData_mismatchedLengths(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := timechart.NewModel(ctx, "Test", "units", 60, 12)
 
@@ -41,4 +46,45 @@ func TestSetDataMismatchedLengths(t *testing.T) {
 	values := []float64{1.0, 2.0}
 
 	m.SetData(times, values) // should not panic, uses min length
+}
+
+func TestResize_viewNonEmpty(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := timechart.NewModel(ctx, "Latency", "ms", 60, 12)
+
+	now := time.Now()
+	m.SetData(
+		[]time.Time{now, now.Add(time.Minute)},
+		[]float64{100.0, 200.0},
+	)
+
+	m.Resize(80, 16)
+	view := m.View()
+	if view == "" {
+		t.Error("View() should return non-empty after resize")
+	}
+}
+
+func TestResize_zeroWidth(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := timechart.NewModel(ctx, "RPS", "req/s", 60, 12)
+
+	m.SetData(
+		[]time.Time{time.Now()},
+		[]float64{10.0},
+	)
+	m.Resize(0, 0) // should not panic after S5 fix
+}
+
+func TestUpdateContext(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := timechart.NewModel(ctx, "RPS", "req/s", 60, 12)
+
+	ctx2 := tuictx.New(80, 24)
+	m.UpdateContext(ctx2)
+
+	view := m.View()
+	if !strings.Contains(view, "RPS") {
+		t.Error("View() should still contain title after UpdateContext")
+	}
 }

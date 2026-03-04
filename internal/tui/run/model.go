@@ -100,6 +100,8 @@ type Model struct {
 	// Report time-series charts
 	reportRPSChart     timechart.Model
 	reportLatencyChart timechart.Model
+	hasRPSData         bool
+	hasLatencyData     bool
 
 	// Live dashboard state
 	streamingSupported bool
@@ -301,16 +303,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.memTrend.UpdateContext(m.ctx)
 		m.reservTrend.UpdateContext(m.ctx)
 		if m.liveFocusMgr != nil {
-			leftW := m.ctx.ContentWidth * 55 / 100
-			rightW := m.ctx.ContentWidth - leftW
-			panelH := m.ctx.ContentHeight - 8
-			m.liveGraphPanel.SetDimensions(leftW, panelH)
-			m.liveInfraPanel.SetDimensions(rightW, panelH)
 			m.liveGraphPanel.UpdateContext(m.ctx)
 			m.liveInfraPanel.UpdateContext(m.ctx)
+			m.resizeLivePanels()
+			m.updateLivePanelContent()
 		}
 		if m.focusMgr != nil {
 			m.k6Panel.UpdateContext(m.ctx)
+			m.graphsPanel.UpdateContext(m.ctx)
 			m.infraPanel.UpdateContext(m.ctx)
 			m.eventsPanel.UpdateContext(m.ctx)
 			m.resizeDashboardPanels()
@@ -393,6 +393,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case k6PointMsg:
 		m.handleK6Point(msg.point)
+		if m.liveFocusMgr != nil {
+			m.updateLivePanelContent()
+		}
 		return m, m.waitForK6Point()
 
 	case infraTickMsg:
@@ -400,6 +403,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveMetrics = msg.metrics
 		m.updateGaugesFromMetrics(msg.metrics)
 		if m.liveMode {
+			if m.liveFocusMgr != nil {
+				m.updateLivePanelContent()
+			}
 			return m, infraPollCmd(context.Background(), m.provider, 15*time.Second)
 		}
 		return m, nil
@@ -470,6 +476,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.focusMgr != nil {
 			cmd := tea.Batch(
 				m.k6Panel.AdvanceTransition(),
+				m.graphsPanel.AdvanceTransition(),
 				m.infraPanel.AdvanceTransition(),
 				m.eventsPanel.AdvanceTransition(),
 			)
@@ -1150,36 +1157,27 @@ func (m *Model) populateReportCharts() {
 		case "alb_requests_per_target":
 			if len(mr.Timestamps) > 0 && len(mr.Values) > 0 {
 				m.reportRPSChart.SetData(mr.Timestamps, mr.Values)
+				m.hasRPSData = true
 			}
 		case "alb_response_time":
 			if len(mr.Timestamps) > 0 && len(mr.Values) > 0 {
 				m.reportLatencyChart.SetData(mr.Timestamps, mr.Values)
+				m.hasLatencyData = true
 			}
 		}
 	}
 }
 
 func (m Model) renderGraphsPanelContent() string {
-	hasRPS := false
-	hasLatency := false
-	for _, mr := range m.metrics {
-		if mr.ID == "alb_requests_per_target" && len(mr.Values) > 0 {
-			hasRPS = true
-		}
-		if mr.ID == "alb_response_time" && len(mr.Values) > 0 {
-			hasLatency = true
-		}
-	}
-
-	if !hasRPS && !hasLatency {
+	if !m.hasRPSData && !m.hasLatencyData {
 		return m.ctx.Styles.Common.FaintTextStyle.Render("No metric data for graphs")
 	}
 
 	var sections []string
-	if hasRPS {
+	if m.hasRPSData {
 		sections = append(sections, m.reportRPSChart.View())
 	}
-	if hasLatency {
+	if m.hasLatencyData {
 		if len(sections) > 0 {
 			sections = append(sections, "")
 		}
@@ -1357,6 +1355,25 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 	}
 }
 
+func (m *Model) updateLivePanelContent() {
+	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
+	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
+}
+
+func (m *Model) resizeLivePanels() {
+	w := m.ctx.ContentWidth
+	panelH := m.ctx.ContentHeight - 8
+	switch {
+	case w >= constants.BreakpointSplit:
+		leftW := w * 55 / 100
+		m.liveGraphPanel.SetDimensions(leftW, panelH)
+		m.liveInfraPanel.SetDimensions(w-leftW, panelH)
+	case w >= constants.BreakpointStacked:
+		m.liveGraphPanel.SetDimensions(w, m.ctx.ContentHeight/2)
+		m.liveInfraPanel.SetDimensions(w, m.ctx.ContentHeight/3)
+	}
+}
+
 func (m Model) viewLiveDashboard() string {
 	width := m.ctx.ContentWidth
 	switch {
@@ -1398,9 +1415,6 @@ func (m Model) viewLiveSplit() string {
 	sections, elapsedStr := m.viewLiveHeader()
 	sections = append(sections, elapsedStr, "")
 
-	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
-	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
-
 	middle := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.liveGraphPanel.View(),
 		m.liveInfraPanel.View(),
@@ -1416,12 +1430,6 @@ func (m Model) viewLiveSplit() string {
 func (m Model) viewLiveStacked() string {
 	sections, elapsedStr := m.viewLiveHeader()
 	sections = append(sections, elapsedStr, "")
-
-	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
-	m.liveGraphPanel.SetDimensions(m.ctx.ContentWidth, m.ctx.ContentHeight/2)
-
-	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
-	m.liveInfraPanel.SetDimensions(m.ctx.ContentWidth, m.ctx.ContentHeight/3)
 
 	sections = append(sections, m.liveGraphPanel.View())
 	sections = append(sections, m.liveInfraPanel.View())

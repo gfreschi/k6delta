@@ -20,18 +20,12 @@ type Model struct {
 
 // NewModel creates a static time-series chart with braille rendering.
 func NewModel(ctx *tuictx.ProgramContext, title, unit string, width, height int) Model {
-	axisStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.FaintText)
-	labelStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.FaintText)
-	lineStyle := lipgloss.NewStyle().
-		Foreground(ctx.Theme.PrimaryText)
-
+	cs := ctx.Styles.Chart
 	chart := tslc.New(width, height,
 		tslc.WithXLabelFormatter(tslc.HourTimeLabelFormatter()),
 		tslc.WithUpdateHandler(tslc.SecondNoZoomUpdateHandler(60)),
-		tslc.WithAxesStyles(axisStyle, labelStyle),
-		tslc.WithStyle(lineStyle),
+		tslc.WithAxesStyles(cs.Axis, cs.Label),
+		tslc.WithStyle(cs.Line),
 		tslc.WithLineStyle(runes.ArcLineStyle),
 	)
 
@@ -59,7 +53,9 @@ func (m *Model) SetData(times []time.Time, values []float64) {
 // Resize updates chart dimensions and redraws.
 func (m *Model) Resize(width, height int) {
 	m.chart.Resize(width, height)
-	m.chart.DrawBrailleAll()
+	if m.chart.Width() > 0 {
+		m.chart.DrawBrailleAll()
+	}
 }
 
 // UpdateContext updates the shared program context.

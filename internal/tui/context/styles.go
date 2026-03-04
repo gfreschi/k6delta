@@ -17,6 +17,14 @@ type Styles struct {
 	Stepper StepperStyles
 	Verdict VerdictStyles
 	Delta   DeltaStyles
+	Chart   ChartStyles
+}
+
+// ChartStyles for ntcharts chart configuration (axis, label, line).
+type ChartStyles struct {
+	Axis  lipgloss.Style
+	Label lipgloss.Style
+	Line  lipgloss.Style
 }
 
 // HeaderStyles for the app/env/phase context bar.
@@ -135,6 +143,11 @@ func InitStyles(t theme.Theme) Styles {
 			Warn:   lipgloss.NewStyle().Bold(true).Foreground(t.WarningText),
 			Fail:   lipgloss.NewStyle().Bold(true).Foreground(t.ErrorText),
 			Reason: lipgloss.NewStyle().Foreground(t.SecondaryText),
+		},
+		Chart: ChartStyles{
+			Axis:  lipgloss.NewStyle().Foreground(t.FaintText),
+			Label: lipgloss.NewStyle().Foreground(t.FaintText),
+			Line:  lipgloss.NewStyle().Foreground(t.PrimaryText),
 		},
 		Delta: DeltaStyles{
 			Better:        lipgloss.NewStyle().Foreground(t.DeltaBetter),

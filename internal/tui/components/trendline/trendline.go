@@ -3,7 +3,6 @@ package trendline
 
 import (
 	"github.com/NimbleMarkets/ntcharts/sparkline"
-	"github.com/charmbracelet/lipgloss"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
@@ -15,12 +14,9 @@ type Model struct {
 
 // NewModel creates a compact sparkline with braille rendering.
 func NewModel(ctx *tuictx.ProgramContext, width, height int) Model {
-	style := lipgloss.NewStyle().
-		Foreground(ctx.Theme.PrimaryText)
-
 	spark := sparkline.New(width, height,
 		sparkline.WithMaxValue(100),
-		sparkline.WithStyle(style),
+		sparkline.WithStyle(ctx.Styles.Chart.Line),
 	)
 
 	return Model{
