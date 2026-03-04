@@ -24,8 +24,9 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
-	"github.com/gfreschi/k6delta/internal/tui/components/streamchart"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
+	"github.com/gfreschi/k6delta/internal/tui/components/streamchart"
+	"github.com/gfreschi/k6delta/internal/tui/components/trendline"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
@@ -109,6 +110,16 @@ type Model struct {
 	liveMetrics        []provider.MetricResult
 	liveRPSCount       int
 	liveRPSTime        time.Time
+
+	// Live dashboard panels + focus
+	liveFocusMgr   *focus.Manager
+	liveGraphPanel panel.Model
+	liveInfraPanel panel.Model
+
+	// Infra trend sparklines
+	cpuTrend    trendline.Model
+	memTrend    trendline.Model
+	reservTrend trendline.Model
 }
 
 type authOKMsg struct{}
@@ -181,6 +192,9 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		cpuGauge:           gauge.NewModel(ctx, "CPU", 30),
 		memGauge:           gauge.NewModel(ctx, "Memory", 30),
 		reservGauge:        gauge.NewModel(ctx, "Reserv", 30),
+		cpuTrend:           trendline.NewModel(ctx, 30, 1),
+		memTrend:           trendline.NewModel(ctx, 30, 1),
+		reservTrend:        trendline.NewModel(ctx, 30, 1),
 	}
 }
 
@@ -193,6 +207,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.liveMode {
 			switch msg.String() {
+			case "tab":
+				if m.liveFocusMgr != nil {
+					m.liveFocusMgr.Next()
+					m.liveGraphPanel.SetFocused(m.liveFocusMgr.IsFocused(0))
+					m.liveInfraPanel.SetFocused(m.liveFocusMgr.IsFocused(1))
+					return m, tea.Batch(
+						m.liveGraphPanel.TransitionCmd(),
+						m.liveInfraPanel.TransitionCmd(),
+					)
+				}
+				return m, nil
+			case "shift+tab":
+				if m.liveFocusMgr != nil {
+					m.liveFocusMgr.Prev()
+					m.liveGraphPanel.SetFocused(m.liveFocusMgr.IsFocused(0))
+					m.liveInfraPanel.SetFocused(m.liveFocusMgr.IsFocused(1))
+					return m, tea.Batch(
+						m.liveGraphPanel.TransitionCmd(),
+						m.liveInfraPanel.TransitionCmd(),
+					)
+				}
+				return m, nil
 			case "g":
 				m.graphMode = !m.graphMode
 				return m, nil
@@ -248,6 +284,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.cpuGauge.UpdateContext(m.ctx)
 		m.reservGauge.UpdateContext(m.ctx)
 		m.memGauge.UpdateContext(m.ctx)
+		m.cpuTrend.UpdateContext(m.ctx)
+		m.memTrend.UpdateContext(m.ctx)
+		m.reservTrend.UpdateContext(m.ctx)
+		if m.liveFocusMgr != nil {
+			leftW := m.ctx.ContentWidth * 55 / 100
+			rightW := m.ctx.ContentWidth - leftW
+			panelH := m.ctx.ContentHeight - 8
+			m.liveGraphPanel.SetDimensions(leftW, panelH)
+			m.liveInfraPanel.SetDimensions(rightW, panelH)
+			m.liveGraphPanel.UpdateContext(m.ctx)
+			m.liveInfraPanel.UpdateContext(m.ctx)
+		}
 		if m.focusMgr != nil {
 			m.k6Panel.UpdateContext(m.ctx)
 			m.infraPanel.UpdateContext(m.ctx)
@@ -291,6 +339,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Start streaming k6 with live dashboard
 			m.k6PointChan = make(chan k6runner.K6Point, 256)
 			m.liveMode = true
+
+			m.liveFocusMgr = focus.New(2)
+			leftW := m.ctx.ContentWidth * 55 / 100
+			rightW := m.ctx.ContentWidth - leftW
+			panelH := m.ctx.ContentHeight - 8
+			m.liveGraphPanel = panel.NewModel(m.ctx, "Graphs [1]", leftW, panelH)
+			m.liveGraphPanel.SetFocused(true)
+			m.liveInfraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", rightW, panelH)
 			k6Ctx, cancel := context.WithCancel(context.Background())
 			m.k6Cancel = cancel
 			m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
@@ -387,6 +443,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case panel.TransitionTickMsg:
+		if m.liveMode && m.liveFocusMgr != nil {
+			var cmds []tea.Cmd
+			if cmd := m.liveGraphPanel.AdvanceTransition(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			if cmd := m.liveInfraPanel.AdvanceTransition(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+			return m, tea.Batch(cmds...)
+		}
 		if m.focusMgr != nil {
 			cmd := tea.Batch(
 				m.k6Panel.AdvanceTransition(),
@@ -1185,10 +1251,13 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 		switch mr.ID {
 		case "ecs_cpu":
 			m.cpuGauge.SetValue(latest, 100.0)
+			m.cpuTrend.Push(latest)
 		case "ecs_memory":
 			m.memGauge.SetValue(latest, 100.0)
+			m.memTrend.Push(latest)
 		case "capacity_provider_reservation":
 			m.reservGauge.SetValue(latest, 100.0)
+			m.reservTrend.Push(latest)
 		}
 	}
 }
@@ -1234,13 +1303,15 @@ func (m Model) viewLiveSplit() string {
 	sections, elapsedStr := m.viewLiveHeader()
 	sections = append(sections, elapsedStr, "")
 
-	leftWidth := m.ctx.ContentWidth * 55 / 100
-	rightWidth := m.ctx.ContentWidth - leftWidth
+	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
+	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
 
-	left := lipgloss.NewStyle().Width(leftWidth).Render(m.viewLiveGraphs())
-	right := lipgloss.NewStyle().Width(rightWidth).Render(m.renderInfraLivePanel())
+	middle := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.liveGraphPanel.View(),
+		m.liveInfraPanel.View(),
+	)
 
-	sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
+	sections = append(sections, middle)
 	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
@@ -1276,8 +1347,11 @@ func (m Model) renderInfraLivePanel() string {
 	lines = append(lines, s.Header.Root.Render("─ Infrastructure "))
 	lines = append(lines, "")
 	lines = append(lines, m.cpuGauge.View())
+	lines = append(lines, m.cpuTrend.View())
 	lines = append(lines, m.memGauge.View())
+	lines = append(lines, m.memTrend.View())
 	lines = append(lines, m.reservGauge.View())
+	lines = append(lines, m.reservTrend.View())
 	lines = append(lines, "")
 
 	lines = append(lines, s.Common.BoldStyle.Render("Tasks"))

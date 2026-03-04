@@ -21,6 +21,27 @@ func TestGauge_rendersBar(t *testing.T) {
 	}
 }
 
+func TestGauge_NoData(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	g := gauge.NewModel(ctx, "CPU", 30)
+
+	view := g.View()
+	if !strings.Contains(view, "—") {
+		t.Error("gauge without data should show — indicator")
+	}
+}
+
+func TestGauge_WithData(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	g := gauge.NewModel(ctx, "CPU", 30)
+	g.SetValue(45.0, 100.0)
+
+	view := g.View()
+	if strings.Contains(view, "—") {
+		t.Error("gauge with data should not show — indicator")
+	}
+}
+
 func TestGauge_thresholdColoring(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	g := gauge.NewModel(ctx, "CPU", 30)

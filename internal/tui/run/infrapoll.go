@@ -20,7 +20,7 @@ func infraPollCmd(ctx context.Context, prov provider.InfraProvider, interval tim
 	return tea.Tick(interval, func(_ time.Time) tea.Msg {
 		snap, _ := prov.TakeSnapshot(ctx)
 		now := time.Now()
-		metrics, _ := prov.FetchMetrics(ctx, now.Add(-interval), now, int32(interval.Seconds()))
+		metrics, _ := prov.FetchMetrics(ctx, now.Add(-2*interval), now, int32(interval.Seconds()))
 		return infraTickMsg{snapshot: snap, metrics: metrics}
 	})
 }

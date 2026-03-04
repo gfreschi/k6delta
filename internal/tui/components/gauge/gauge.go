@@ -12,11 +12,12 @@ import (
 
 // Model is the gauge Bubble Tea model.
 type Model struct {
-	ctx   *tuictx.ProgramContext
-	label string
-	width int
-	value float64
-	max   float64
+	ctx     *tuictx.ProgramContext
+	label   string
+	width   int
+	value   float64
+	max     float64
+	hasData bool
 }
 
 // NewModel creates a gauge with a label and bar width.
@@ -28,6 +29,7 @@ func NewModel(ctx *tuictx.ProgramContext, label string, barWidth int) Model {
 func (m *Model) SetValue(value, max float64) {
 	m.value = value
 	m.max = max
+	m.hasData = true
 }
 
 // UpdateContext updates the shared context.
@@ -37,6 +39,12 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 
 // View renders the gauge bar.
 func (m Model) View() string {
+	labelStr := fmt.Sprintf("%-8s", m.label)
+	if !m.hasData {
+		bar := m.ctx.Styles.Common.FaintTextStyle.Render(strings.Repeat("░", m.width))
+		return fmt.Sprintf("%s %s  %s", labelStr, bar, m.ctx.Styles.Common.FaintTextStyle.Render("—"))
+	}
+
 	pct := m.value / m.max
 	if pct > 1 {
 		pct = 1
@@ -49,7 +57,7 @@ func (m Model) View() string {
 		m.ctx.Styles.Common.FaintTextStyle.Render(strings.Repeat("░", empty))
 
 	pctStr := fmt.Sprintf("%.0f%%", m.value/m.max*100)
-	return fmt.Sprintf("%-8s %s  %s", m.label, bar, pctStr)
+	return fmt.Sprintf("%s %s  %s", labelStr, bar, pctStr)
 }
 
 func (m Model) thresholdColor(pct float64) lipgloss.Style {
