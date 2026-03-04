@@ -278,9 +278,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footerComp.UpdateContext(m.ctx)
 		m.rpsChart.UpdateContext(m.ctx)
 		m.latencyChart.UpdateContext(m.ctx)
-		chartW := m.ctx.ContentWidth * 55 / 100
-		m.rpsChart.Resize(chartW, 12)
-		m.latencyChart.Resize(chartW, 12)
+		width := m.ctx.ContentWidth
+		switch {
+		case width >= constants.BreakpointSplit:
+			chartW := width*55/100 - 2
+			m.rpsChart.Resize(chartW, 12)
+			m.latencyChart.Resize(chartW, 12)
+		case width >= constants.BreakpointStacked:
+			m.rpsChart.Resize(width-2, 10)
+			m.latencyChart.Resize(width-2, 10)
+		}
 		m.cpuGauge.UpdateContext(m.ctx)
 		m.reservGauge.UpdateContext(m.ctx)
 		m.memGauge.UpdateContext(m.ctx)
@@ -349,10 +356,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.liveInfraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", rightW, panelH)
 			k6Ctx, cancel := context.WithCancel(context.Background())
 			m.k6Cancel = cancel
-			m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
+			m.footerComp.SetHints([]footer.KeyHint{
+				{Key: "q", Action: "quit"},
+				{Key: "tab", Action: "next panel"},
 				{Key: "g", Action: "graphs"},
 				{Key: "a", Action: "abort"},
-				{Key: "q", Action: "quit"},
 			})
 			return m, tea.Batch(
 				flashCmd,
@@ -1322,8 +1330,14 @@ func (m Model) viewLiveStacked() string {
 	sections, elapsedStr := m.viewLiveHeader()
 	sections = append(sections, elapsedStr, "")
 
-	sections = append(sections, m.viewLiveGraphs())
-	sections = append(sections, "", m.renderInfraLivePanel())
+	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
+	m.liveGraphPanel.SetDimensions(m.ctx.ContentWidth, m.ctx.ContentHeight/2)
+
+	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
+	m.liveInfraPanel.SetDimensions(m.ctx.ContentWidth, m.ctx.ContentHeight/3)
+
+	sections = append(sections, m.liveGraphPanel.View())
+	sections = append(sections, m.liveInfraPanel.View())
 	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
