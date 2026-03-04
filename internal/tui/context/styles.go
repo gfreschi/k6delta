@@ -93,7 +93,7 @@ func InitStyles(t theme.Theme) Styles {
 		},
 		Panel: PanelStyles{
 			Root:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.PrimaryBorder),
-			Focused: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.FocusedBorder),
+			Focused: lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(t.FocusedBorder),
 			Border:  lipgloss.NewStyle().Foreground(t.PrimaryBorder),
 		},
 		Table: TableStyles{
