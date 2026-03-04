@@ -1,0 +1,29 @@
+// Package constants defines shared layout values and icons for the TUI.
+package constants
+
+// Dimensions represents a width/height pair.
+type Dimensions struct {
+	Width  int
+	Height int
+}
+
+// Layout constants.
+const (
+	MinContentWidth  = 80
+	MinContentHeight = 24
+	PanelPadding     = 1
+	FooterHeight     = 1
+	HeaderHeight     = 2
+)
+
+// Icons used across TUI components.
+const (
+	IconPending = "◯"
+	IconRunning = "▸"
+	IconDone    = "✓"
+	IconFailed  = "✗"
+	IconWarning = "⚠"
+	IconUp      = "↑"
+	IconDown    = "↓"
+	IconBullet  = "·"
+)
