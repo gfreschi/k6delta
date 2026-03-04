@@ -64,6 +64,54 @@ func TestBuildMetricQueries_Minimal(t *testing.T) {
 	}
 }
 
+func TestFetchMetricsProgress(t *testing.T) {
+	t1 := time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
+	t2 := time.Date(2026, 3, 3, 10, 1, 0, 0, time.UTC)
+
+	cwMock := &mockCW{
+		output: &cloudwatch.GetMetricDataOutput{
+			MetricDataResults: []cwtypes.MetricDataResult{
+				{Id: aws.String("ecs_cpu"), Values: []float64{10.0}, Timestamps: []time.Time{t1}},
+			},
+		},
+	}
+	ecsMock := &mockECS{
+		output: &ecs.DescribeServicesOutput{
+			Services: []ecstypes.Service{{LoadBalancers: []ecstypes.LoadBalancer{}}},
+		},
+	}
+	elbMock := &mockELB{
+		output: &elbv2.DescribeTargetGroupsOutput{
+			TargetGroups: []elbtypes.TargetGroup{},
+		},
+	}
+	asgMock := &mockASG{
+		output: &autoscaling.DescribeAutoScalingGroupsOutput{},
+	}
+
+	var progress []string
+	p := &Provider{
+		app: config.ResolvedApp{Cluster: "c", Service: "s"},
+		onProgress: func(id string, current, total int) {
+			progress = append(progress, id)
+		},
+	}
+
+	_, err := p.fetchMetricsWithClients(context.Background(), cwMock, ecsMock, elbMock, asgMock, t1, t2, 60)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(progress) < 2 {
+		t.Fatalf("progress calls = %d, want >= 2; got %v", len(progress), progress)
+	}
+	if progress[0] != "discovering resources" {
+		t.Errorf("progress[0] = %q, want %q", progress[0], "discovering resources")
+	}
+	if progress[1] != "querying CloudWatch" {
+		t.Errorf("progress[1] = %q, want %q", progress[1], "querying CloudWatch")
+	}
+}
+
 func TestFetchMetrics(t *testing.T) {
 	t1 := time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 3, 3, 10, 1, 0, 0, time.UTC)

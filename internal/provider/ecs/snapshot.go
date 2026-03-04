@@ -37,7 +37,13 @@ func (p *Provider) TakeSnapshot(ctx context.Context) (provider.Snapshot, error) 
 func (p *Provider) takeSnapshotWithClients(ctx context.Context, ecsClient ECSDescriber, asgClient ASGDescriber) (provider.Snapshot, error) {
 	snap := provider.Snapshot{}
 
+	totalSteps := 1
+	if p.app.ASGPrefix != "" {
+		totalSteps = 2
+	}
+
 	// ECS service counts
+	p.reportProgress("ECS tasks", 1, totalSteps)
 	out, err := ecsClient.DescribeServices(ctx, &ecs.DescribeServicesInput{
 		Cluster:  &p.app.Cluster,
 		Services: []string{p.app.Service},
@@ -57,6 +63,7 @@ func (p *Provider) takeSnapshotWithClients(ctx context.Context, ecsClient ECSDes
 		return snap, nil
 	}
 
+	p.reportProgress("ASG instances", 2, 2)
 	asgName, err := discoverASGName(ctx, asgClient, p.app.ASGPrefix)
 	if err != nil {
 		return snap, err

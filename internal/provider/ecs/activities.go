@@ -43,7 +43,26 @@ func (p *Provider) FetchActivities(ctx context.Context, start, end time.Time) (p
 func (p *Provider) fetchActivitiesWithClients(ctx context.Context, ecsScaling ECSScalingDescriber, asgScaling ASGScalingDescriber, cwClient AlarmDescriber, asgClient ASGDescriber, start, end time.Time) (provider.Activities, error) {
 	var result provider.Activities
 
+	// Resolve ASG name early to compute totalSteps
+	var asgName string
+	if p.asgResolved {
+		asgName = p.asgName
+	} else if p.app.ASGPrefix != "" {
+		asgName, _ = discoverASGName(ctx, asgClient, p.app.ASGPrefix)
+	}
+
+	// Compute totalSteps dynamically based on optional sections
+	totalSteps := 1 // always ECS scaling
+	if asgName != "" {
+		totalSteps++
+	}
+	if p.app.AlarmPrefix != "" {
+		totalSteps++
+	}
+	step := 1
+
 	// ECS Application Auto Scaling activities
+	p.reportProgress("ECS scaling", step, totalSteps)
 	resourceID := fmt.Sprintf("service/%s/%s", p.app.Cluster, p.app.Service)
 	ecsOut, err := ecsScaling.DescribeScalingActivities(ctx, &applicationautoscaling.DescribeScalingActivitiesInput{
 		ServiceNamespace: appastypes.ServiceNamespaceEcs,
@@ -70,13 +89,9 @@ func (p *Provider) fetchActivitiesWithClients(ctx context.Context, ecsScaling EC
 	}
 
 	// ASG scaling activities (optional)
-	var asgName string
-	if p.asgResolved {
-		asgName = p.asgName
-	} else if p.app.ASGPrefix != "" {
-		asgName, _ = discoverASGName(ctx, asgClient, p.app.ASGPrefix)
-	}
 	if asgName != "" {
+		step++
+		p.reportProgress("ASG scaling", step, totalSteps)
 		asgOut, err := asgScaling.DescribeScalingActivities(ctx, &autoscalingapi.DescribeScalingActivitiesInput{
 			AutoScalingGroupName: &asgName,
 		})
@@ -103,6 +118,8 @@ func (p *Provider) fetchActivitiesWithClients(ctx context.Context, ecsScaling EC
 
 	// CloudWatch alarm history (optional)
 	if p.app.AlarmPrefix != "" {
+		step++
+		p.reportProgress("alarm history", step, totalSteps)
 		alarmOut, err := cwClient.DescribeAlarmHistory(ctx, &cloudwatch.DescribeAlarmHistoryInput{
 			StartDate:       &start,
 			EndDate:         &end,

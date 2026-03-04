@@ -59,6 +59,9 @@ func NewRunCmd() *cobra.Command {
 
 			m := runtui.NewModel(resolved, prov, baseURL, skipAnalyze)
 			p := tea.NewProgram(m)
+			prov.SetOnProgress(func(id string, current, total int) {
+				p.Send(runtui.ProgressMsg{ID: id, Current: current, Total: total})
+			})
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("TUI error: %w", err)
 			}

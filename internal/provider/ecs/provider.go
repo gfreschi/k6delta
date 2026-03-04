@@ -19,6 +19,20 @@ type Provider struct {
 	app         k6config.ResolvedApp
 	asgName     string
 	asgResolved bool
+	onProgress  func(id string, current, total int)
+}
+
+// SetOnProgress sets a callback that receives progress updates during
+// long-running operations like FetchMetrics and TakeSnapshot.
+func (p *Provider) SetOnProgress(fn func(id string, current, total int)) {
+	p.onProgress = fn
+}
+
+// reportProgress calls the progress callback if set.
+func (p *Provider) reportProgress(id string, current, total int) {
+	if p.onProgress != nil {
+		p.onProgress(id, current, total)
+	}
 }
 
 // New creates a new ECS provider from a resolved app config.

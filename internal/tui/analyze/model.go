@@ -86,6 +86,13 @@ type metricsDoneMsg struct{ metrics []provider.MetricResult }
 type activitiesDoneMsg struct{ activities provider.Activities }
 type errMsg struct{ err error }
 
+// ProgressMsg is sent by the provider's OnProgress callback via tea.Program.Send.
+type ProgressMsg struct {
+	ID      string
+	Current int
+	Total   int
+}
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.checkAuth())
 }
@@ -107,6 +114,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case ProgressMsg:
+		detail := fmt.Sprintf("%s [%d/%d]", msg.ID, msg.Current, msg.Total)
+		for i := range m.steps.Steps {
+			if m.steps.Steps[i].Status == tui.StepRunning {
+				m.steps.SetDetail(i, detail)
+				break
+			}
+		}
+		return m, nil
 
 	case authOKMsg:
 		m.steps.MarkDone(stepAuth, "verified")

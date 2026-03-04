@@ -37,6 +37,7 @@ func (p *Provider) FetchMetrics(ctx context.Context, start, end time.Time, perio
 
 func (p *Provider) fetchMetricsWithClients(ctx context.Context, cwClient CloudWatchGetter, ecsClient ECSDescriber, elbClient ELBDescriber, asgClient ASGDescriber, start, end time.Time, period int32) ([]provider.MetricResult, error) {
 	// Discover ELB resources for ALB metrics
+	p.reportProgress("discovering resources", 1, 2)
 	var tgARN, albSuffix string
 	tgARN, _ = discoverTargetGroup(ctx, ecsClient, p.app.Cluster, p.app.Service)
 	if tgARN != "" {
@@ -53,6 +54,7 @@ func (p *Provider) fetchMetricsWithClients(ctx context.Context, cwClient CloudWa
 
 	queries := buildMetricQueries(p.app.Cluster, p.app.Service, asgName, tgARN, albSuffix, p.app.CapacityProvider, period)
 
+	p.reportProgress("querying CloudWatch", 2, 2)
 	out, err := cwClient.GetMetricData(ctx, &cloudwatch.GetMetricDataInput{
 		MetricDataQueries: queries,
 		StartTime:         &start,

@@ -58,6 +58,9 @@ func NewAnalyzeCmd() *cobra.Command {
 
 			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, jsonOutput, outputFile)
 			p := tea.NewProgram(m)
+			prov.SetOnProgress(func(id string, current, total int) {
+				p.Send(analyzetui.ProgressMsg{ID: id, Current: current, Total: total})
+			})
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("TUI error: %w", err)
 			}

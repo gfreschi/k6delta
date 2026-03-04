@@ -11,11 +11,14 @@ import (
 	"github.com/gfreschi/k6delta/internal/cli"
 )
 
+var version = "dev"
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:           "k6delta",
 		Short:         "Run k6 load tests. See what your infrastructure did.",
 		Long:          "k6delta wraps k6 execution with infrastructure monitoring and before/after comparison.\nIt correlates k6 test results with ECS, ASG, ALB, and CloudWatch metrics in a single command.",
+		Version:       version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}

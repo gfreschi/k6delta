@@ -114,6 +114,95 @@ func TestFetchActivities(t *testing.T) {
 	}
 }
 
+func TestFetchActivitiesProgress(t *testing.T) {
+	start := time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)
+
+	ecsScalingMock := &mockECSScaling{
+		output: &applicationautoscaling.DescribeScalingActivitiesOutput{},
+	}
+	asgScalingMock := &mockASGScaling{
+		output: &autoscalingapi.DescribeScalingActivitiesOutput{},
+	}
+	alarmMock := &mockAlarm{
+		output: &cloudwatch.DescribeAlarmHistoryOutput{},
+	}
+	asgMock := &mockASG{
+		output: &autoscalingapi.DescribeAutoScalingGroupsOutput{
+			AutoScalingGroups: []astypes.AutoScalingGroup{
+				{AutoScalingGroupName: aws.String("myapp-staging-ecs-abc")},
+			},
+		},
+	}
+
+	var progress []string
+	p := &Provider{
+		app: config.ResolvedApp{
+			Cluster:     "c",
+			Service:     "s",
+			ASGPrefix:   "myapp-staging-ecs-",
+			AlarmPrefix: "myapp-",
+		},
+		onProgress: func(id string, current, total int) {
+			progress = append(progress, id)
+		},
+	}
+
+	_, err := p.fetchActivitiesWithClients(context.Background(), ecsScalingMock, asgScalingMock, alarmMock, asgMock, start, end)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(progress) != 3 {
+		t.Fatalf("progress calls = %d, want 3; got %v", len(progress), progress)
+	}
+	if progress[0] != "ECS scaling" {
+		t.Errorf("progress[0] = %q, want %q", progress[0], "ECS scaling")
+	}
+	if progress[1] != "ASG scaling" {
+		t.Errorf("progress[1] = %q, want %q", progress[1], "ASG scaling")
+	}
+	if progress[2] != "alarm history" {
+		t.Errorf("progress[2] = %q, want %q", progress[2], "alarm history")
+	}
+}
+
+func TestFetchActivitiesProgressMinimal(t *testing.T) {
+	start := time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)
+
+	ecsScalingMock := &mockECSScaling{
+		output: &applicationautoscaling.DescribeScalingActivitiesOutput{},
+	}
+	asgScalingMock := &mockASGScaling{
+		output: &autoscalingapi.DescribeScalingActivitiesOutput{},
+	}
+	alarmMock := &mockAlarm{
+		output: &cloudwatch.DescribeAlarmHistoryOutput{},
+	}
+	asgMock := &mockASG{
+		output: &autoscalingapi.DescribeAutoScalingGroupsOutput{},
+	}
+
+	var progress []string
+	p := &Provider{
+		app: config.ResolvedApp{Cluster: "c", Service: "s"},
+		onProgress: func(id string, current, total int) {
+			progress = append(progress, id)
+		},
+	}
+
+	_, err := p.fetchActivitiesWithClients(context.Background(), ecsScalingMock, asgScalingMock, alarmMock, asgMock, start, end)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(progress) != 1 {
+		t.Fatalf("progress calls = %d, want 1; got %v", len(progress), progress)
+	}
+	if progress[0] != "ECS scaling" {
+		t.Errorf("progress[0] = %q, want %q", progress[0], "ECS scaling")
+	}
+}
+
 func TestFetchActivitiesNoASG(t *testing.T) {
 	start := time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
 	end := time.Date(2026, 3, 3, 12, 0, 0, 0, time.UTC)

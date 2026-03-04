@@ -90,6 +90,13 @@ type reportMsg struct {
 }
 type errMsg struct{ err error }
 
+// ProgressMsg is sent by the provider's OnProgress callback via tea.Program.Send.
+type ProgressMsg struct {
+	ID      string
+	Current int
+	Total   int
+}
+
 // NewModel creates a new run Model.
 func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool) Model {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
@@ -140,6 +147,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case ProgressMsg:
+		detail := fmt.Sprintf("%s [%d/%d]", msg.ID, msg.Current, msg.Total)
+		m.steps.SetDetail(m.currentStepIndex(), detail)
+		return m, nil
 
 	case authOKMsg:
 		m.steps.MarkDone(stepAuth, "verified")
@@ -439,13 +451,13 @@ func (m Model) phaseDescription() string {
 
 func (m Model) renderReport() string {
 	var b strings.Builder
-
-	separatorLine := strings.Repeat("-", 50)
+	separatorLine := strings.Repeat("-", 60)
 
 	b.WriteString(tui.TitleStyle.Render("Load Test Report"))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
+	// Duration and k6 exit
 	duration := m.endTime.Sub(m.startTime)
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
@@ -465,11 +477,12 @@ func (m Model) renderReport() string {
 		tui.LabelStyle.Render("k6 exit"),
 		exitStyle.Render(exitStr)))
 
+	// k6 metrics table
 	if m.report != nil && m.report.K6 != nil {
 		k6 := m.report.K6
 		b.WriteByte('\n')
 		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Metric", "Value"))
-		b.WriteString("  " + separatorLine)
+		b.WriteString("  " + separatorLine[:50])
 		b.WriteByte('\n')
 		b.WriteString(fmt.Sprintf("  %-26s %s\n", "p95 latency", fmtFloatMs(k6.P95ms)))
 		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Error rate", fmtPct(k6.ErrorRate)))
@@ -479,15 +492,87 @@ func (m Model) renderReport() string {
 			fmt.Sprintf("%d passed, %d failed", k6.Thresholds.Passed, k6.Thresholds.Failed)))
 	}
 
+	// Infrastructure with delta column
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  %-26s %-12s %s\n", "Infrastructure", "Before", "After"))
+	b.WriteString(fmt.Sprintf("  %-26s %-12s %-12s %s\n", "Infrastructure", "Before", "After", "Delta"))
 	b.WriteString("  " + separatorLine)
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  %-26s %-12d %d\n", "ECS tasks",
-		m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning))
-	b.WriteString(fmt.Sprintf("  %-26s %-12d %d\n", "EC2 instances",
-		m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances))
+	b.WriteString(fmt.Sprintf("  %-26s %-12d %-12d %s\n", "ECS tasks",
+		m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning,
+		fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning)))
+	b.WriteString(fmt.Sprintf("  %-26s %-12d %-12d %s\n", "EC2 instances",
+		m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances,
+		fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances)))
 
+	// CloudWatch peaks
+	if len(m.metrics) > 0 {
+		b.WriteByte('\n')
+		b.WriteString(fmt.Sprintf("  %-26s %12s %12s\n", "CloudWatch Peaks", "Peak", "Avg"))
+		b.WriteString("  " + separatorLine)
+		b.WriteByte('\n')
+		for _, mr := range m.metrics {
+			label := metricLabel(mr.ID)
+			if label == "" {
+				continue
+			}
+			if mr.Peak != nil && mr.Avg != nil {
+				b.WriteString(fmt.Sprintf("  %-26s %12s %12s\n", label,
+					fmtMetricValue(mr.ID, *mr.Peak),
+					fmtMetricValue(mr.ID, *mr.Avg)))
+			}
+		}
+	}
+
+	// Verdict
+	k6Exit := 0
+	if m.k6Result != nil {
+		k6Exit = m.k6Result.ExitCode
+	}
+	alb5xx := 0
+	var ecsCPUPeak *float64
+	for _, mr := range m.metrics {
+		switch mr.ID {
+		case "alb_5xx":
+			if mr.Peak != nil {
+				alb5xx = int(*mr.Peak)
+			}
+		case "ecs_cpu":
+			ecsCPUPeak = mr.Peak
+		}
+	}
+
+	v := computeVerdict(verdictInput{
+		k6Exit:      k6Exit,
+		alb5xx:      alb5xx,
+		ecsCPUPeak:  ecsCPUPeak,
+		tasksBefore: m.preSnapshot.TaskRunning,
+		tasksAfter:  m.postSnapshot.TaskRunning,
+		activities:  m.activities,
+	})
+
+	b.WriteByte('\n')
+	var verdictStyle func(strs ...string) string
+	switch v.level {
+	case verdictFail:
+		verdictStyle = tui.ErrorStyle.Render
+	case verdictWarn:
+		verdictStyle = tui.WarnStyle.Render
+	default:
+		verdictStyle = tui.SuccessStyle.Render
+	}
+	b.WriteString("  " + tui.BoldStyle.Render("Verdict: ") + verdictStyle(v.level.String()))
+	b.WriteByte('\n')
+	for _, reason := range v.reasons {
+		icon := "\u2713"
+		if v.level == verdictFail {
+			icon = "\u2717"
+		} else if v.level == verdictWarn {
+			icon = "\u26a0"
+		}
+		b.WriteString(fmt.Sprintf("  %s %s\n", icon, reason))
+	}
+
+	// Output files
 	b.WriteByte('\n')
 	b.WriteString("  Output Files\n")
 	k6SummaryPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")
@@ -532,4 +617,57 @@ func fmtPctRate(v *float64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%.1f%%", *v*100)
+}
+
+func fmtDelta(before, after int) string {
+	diff := after - before
+	if diff == 0 {
+		return "  -"
+	}
+	if diff > 0 {
+		return fmt.Sprintf("+%d \u2191", diff)
+	}
+	return fmt.Sprintf("%d \u2193", diff)
+}
+
+func metricLabel(id string) string {
+	switch id {
+	case "ecs_cpu":
+		return "ECS CPU"
+	case "ecs_memory":
+		return "ECS Memory"
+	case "cluster_cpu_reservation":
+		return "Cluster CPU Reservation"
+	case "cluster_memory_reservation":
+		return "Cluster Mem Reservation"
+	case "capacity_provider_reservation":
+		return "Capacity Provider Res."
+	case "alb_response_time":
+		return "ALB Response Time (p95)"
+	case "alb_5xx":
+		return "ALB 5xx"
+	case "alb_requests_per_target":
+		return "ALB Req/Target"
+	case "alb_healthy_hosts":
+		return "ALB Healthy Hosts"
+	case "asg_desired":
+		return "ASG Desired"
+	case "asg_in_service":
+		return "ASG In-Service"
+	default:
+		return ""
+	}
+}
+
+func fmtMetricValue(id string, v float64) string {
+	switch id {
+	case "alb_response_time":
+		return fmt.Sprintf("%.0fms", v*1000)
+	case "alb_5xx", "alb_requests_per_target":
+		return fmt.Sprintf("%.0f", v)
+	case "alb_healthy_hosts", "asg_desired", "asg_in_service":
+		return fmt.Sprintf("%.0f", v)
+	default:
+		return fmt.Sprintf("%.1f%%", v)
+	}
 }
