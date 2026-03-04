@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+    tags-ignore: ["v*"]
   pull_request:
     branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -18,12 +23,17 @@ jobs:
         with:
           go-version: stable
       - run: go vet ./...
+      - name: govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest && govulncheck ./...
+      - uses: securego/gosec@v2
+        with:
+          args: ./...
 
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.25', '1.26']
+        go-version: ["1.25", "1.26"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -31,40 +41,18 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - run: go test ./... -count=1 -race
 
-  govulncheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck
-        run: govulncheck ./...
-
-  gosec:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: securego/gosec@master
-        with:
-          args: ./...
-
   build:
     runs-on: ubuntu-latest
     needs: [lint, test]
-    strategy:
-      matrix:
-        goos: [linux, darwin]
-        goarch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -ldflags="-s -w" -o "k6delta-$GOOS-$GOARCH" ./cmd/k6delta
+      - name: Cross-compile all platforms
+        run: |
+          for os in linux darwin; do
+            for arch in amd64 arm64; do
+              GOOS=$os GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "k6delta-${os}-${arch}" ./cmd/k6delta
+            done
+          done
