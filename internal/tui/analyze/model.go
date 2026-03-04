@@ -243,16 +243,16 @@ func (m Model) View() string {
 	b.WriteString(tui.HeaderStyle.Render(fmt.Sprintf("Scaling Analysis: %s (%s)", m.app.Name, m.app.Env)))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  %s  %s\n", tui.DimStyle.Render("Cluster:"), m.app.Cluster))
-	b.WriteString(fmt.Sprintf("  %s  %s\n", tui.DimStyle.Render("Service:"), m.app.Service))
-	b.WriteString(fmt.Sprintf("  %s   %s -> %s\n", tui.DimStyle.Render("Window:"), m.startTime, m.endTime))
-	b.WriteString(fmt.Sprintf("  %s   %ds\n", tui.DimStyle.Render("Period:"), m.period))
+	fmt.Fprintf(&b, "  %s  %s\n", tui.DimStyle.Render("Cluster:"), m.app.Cluster)
+	fmt.Fprintf(&b, "  %s  %s\n", tui.DimStyle.Render("Service:"), m.app.Service)
+	fmt.Fprintf(&b, "  %s   %s -> %s\n", tui.DimStyle.Render("Window:"), m.startTime, m.endTime)
+	fmt.Fprintf(&b, "  %s   %ds\n", tui.DimStyle.Render("Period:"), m.period)
 	b.WriteByte('\n')
 
 	if m.phase != phaseDisplay {
 		b.WriteString(m.steps.View())
 		if m.err == nil {
-			b.WriteString(fmt.Sprintf("\n  %s\n", m.spinner.View()))
+			fmt.Fprintf(&b, "\n  %s\n", m.spinner.View())
 		}
 		if m.err != nil {
 			b.WriteByte('\n')
@@ -269,11 +269,11 @@ func (m Model) View() string {
 	b.WriteString(tui.HeaderStyle.Render("Current State"))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  ECS Tasks:  running=%d  desired=%d\n",
-		m.snapshot.TaskRunning, m.snapshot.TaskDesired))
+	fmt.Fprintf(&b, "  ECS Tasks:  running=%d  desired=%d\n",
+		m.snapshot.TaskRunning, m.snapshot.TaskDesired)
 	if m.snapshot.ASGName != "" {
-		b.WriteString(fmt.Sprintf("  ASG:        in_service=%d  desired=%d\n",
-			m.snapshot.ASGInstances, m.snapshot.ASGDesired))
+		fmt.Fprintf(&b, "  ASG:        in_service=%d  desired=%d\n",
+			m.snapshot.ASGInstances, m.snapshot.ASGDesired)
 	}
 	b.WriteByte('\n')
 
@@ -300,7 +300,7 @@ func (m Model) View() string {
 				if desc == "" {
 					desc = a.Cause
 				}
-				b.WriteString(fmt.Sprintf("    %s  %s  %s\n", a.Time, a.Status, desc))
+				fmt.Fprintf(&b, "    %s  %s  %s\n", a.Time, a.Status, desc)
 			}
 			b.WriteByte('\n')
 		}
@@ -312,7 +312,7 @@ func (m Model) View() string {
 				if desc == "" {
 					desc = a.Cause
 				}
-				b.WriteString(fmt.Sprintf("    %s  %s  %s\n", a.Time, a.Status, desc))
+				fmt.Fprintf(&b, "    %s  %s  %s\n", a.Time, a.Status, desc)
 			}
 			b.WriteByte('\n')
 		}
@@ -328,7 +328,7 @@ func (m Model) View() string {
 		b.WriteByte('\n')
 		b.WriteByte('\n')
 		for _, a := range m.activities.Alarms {
-			b.WriteString(fmt.Sprintf("  %s  %s  %s -> %s\n", a.Time, a.AlarmName, a.OldState, a.NewState))
+			fmt.Fprintf(&b, "  %s  %s  %s -> %s\n", a.Time, a.AlarmName, a.OldState, a.NewState)
 		}
 		b.WriteByte('\n')
 	}

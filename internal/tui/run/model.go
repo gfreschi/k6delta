@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/config"
@@ -45,9 +45,9 @@ const (
 
 // Model is the Bubble Tea model for k6delta run.
 type Model struct {
-	app      config.ResolvedApp
-	provider provider.InfraProvider
-	baseURL  string
+	app         config.ResolvedApp
+	provider    provider.InfraProvider
+	baseURL     string
 	skipAnalyze bool
 
 	currentPhase  runPhase
@@ -461,11 +461,11 @@ func (m Model) renderReport() string {
 	duration := m.endTime.Sub(m.startTime)
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
-	b.WriteString(fmt.Sprintf("  %s%s -> %s  (%dm %ds)\n",
+	fmt.Fprintf(&b, "  %s%s -> %s  (%dm %ds)\n",
 		tui.LabelStyle.Render("Duration"),
 		m.startTime.Format("15:04:05"),
 		m.endTime.Format("15:04:05"),
-		minutes, seconds))
+		minutes, seconds)
 
 	exitStr := "0 (all thresholds passed)"
 	exitStyle := tui.SuccessStyle
@@ -473,41 +473,41 @@ func (m Model) renderReport() string {
 		exitStr = fmt.Sprintf("%d (threshold failures)", m.k6Result.ExitCode)
 		exitStyle = tui.WarnStyle
 	}
-	b.WriteString(fmt.Sprintf("  %s%s\n",
+	fmt.Fprintf(&b, "  %s%s\n",
 		tui.LabelStyle.Render("k6 exit"),
-		exitStyle.Render(exitStr)))
+		exitStyle.Render(exitStr))
 
 	// k6 metrics table
 	if m.report != nil && m.report.K6 != nil {
 		k6 := m.report.K6
 		b.WriteByte('\n')
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Metric", "Value"))
+		fmt.Fprintf(&b, "  %-26s %s\n", "Metric", "Value")
 		b.WriteString("  " + separatorLine[:50])
 		b.WriteByte('\n')
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "p95 latency", fmtFloatMs(k6.P95ms)))
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Error rate", fmtPct(k6.ErrorRate)))
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Throughput", fmtFloatRate(k6.RPSAvg)))
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Checks", fmtPctRate(k6.ChecksRate)))
-		b.WriteString(fmt.Sprintf("  %-26s %s\n", "Thresholds",
-			fmt.Sprintf("%d passed, %d failed", k6.Thresholds.Passed, k6.Thresholds.Failed)))
+		fmt.Fprintf(&b, "  %-26s %s\n", "p95 latency", fmtFloatMs(k6.P95ms))
+		fmt.Fprintf(&b, "  %-26s %s\n", "Error rate", fmtPct(k6.ErrorRate))
+		fmt.Fprintf(&b, "  %-26s %s\n", "Throughput", fmtFloatRate(k6.RPSAvg))
+		fmt.Fprintf(&b, "  %-26s %s\n", "Checks", fmtPctRate(k6.ChecksRate))
+		fmt.Fprintf(&b, "  %-26s %s\n", "Thresholds",
+			fmt.Sprintf("%d passed, %d failed", k6.Thresholds.Passed, k6.Thresholds.Failed))
 	}
 
 	// Infrastructure with delta column
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  %-26s %-12s %-12s %s\n", "Infrastructure", "Before", "After", "Delta"))
+	fmt.Fprintf(&b, "  %-26s %-12s %-12s %s\n", "Infrastructure", "Before", "After", "Delta")
 	b.WriteString("  " + separatorLine)
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("  %-26s %-12d %-12d %s\n", "ECS tasks",
+	fmt.Fprintf(&b, "  %-26s %-12d %-12d %s\n", "ECS tasks",
 		m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning,
-		fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning)))
-	b.WriteString(fmt.Sprintf("  %-26s %-12d %-12d %s\n", "EC2 instances",
+		fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning))
+	fmt.Fprintf(&b, "  %-26s %-12d %-12d %s\n", "EC2 instances",
 		m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances,
-		fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances)))
+		fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances))
 
 	// CloudWatch peaks
 	if len(m.metrics) > 0 {
 		b.WriteByte('\n')
-		b.WriteString(fmt.Sprintf("  %-26s %12s %12s\n", "CloudWatch Peaks", "Peak", "Avg"))
+		fmt.Fprintf(&b, "  %-26s %12s %12s\n", "CloudWatch Peaks", "Peak", "Avg")
 		b.WriteString("  " + separatorLine)
 		b.WriteByte('\n')
 		for _, mr := range m.metrics {
@@ -516,9 +516,9 @@ func (m Model) renderReport() string {
 				continue
 			}
 			if mr.Peak != nil && mr.Avg != nil {
-				b.WriteString(fmt.Sprintf("  %-26s %12s %12s\n", label,
+				fmt.Fprintf(&b, "  %-26s %12s %12s\n", label,
 					fmtMetricValue(mr.ID, *mr.Peak),
-					fmtMetricValue(mr.ID, *mr.Avg)))
+					fmtMetricValue(mr.ID, *mr.Avg))
 			}
 		}
 	}
@@ -564,12 +564,13 @@ func (m Model) renderReport() string {
 	b.WriteByte('\n')
 	for _, reason := range v.reasons {
 		icon := "\u2713"
-		if v.level == verdictFail {
+		switch v.level {
+		case verdictFail:
 			icon = "\u2717"
-		} else if v.level == verdictWarn {
+		case verdictWarn:
 			icon = "\u26a0"
 		}
-		b.WriteString(fmt.Sprintf("  %s %s\n", icon, reason))
+		fmt.Fprintf(&b, "  %s %s\n", icon, reason)
 	}
 
 	// Output files
@@ -577,14 +578,14 @@ func (m Model) renderReport() string {
 	b.WriteString("  Output Files\n")
 	k6SummaryPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")
 	if _, err := os.Stat(k6SummaryPath); err == nil {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "k6 summary:", k6SummaryPath))
+		fmt.Fprintf(&b, "  %-18s %s\n", "k6 summary:", k6SummaryPath)
 	}
 	htmlPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")
 	if _, err := os.Stat(htmlPath); err == nil {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "HTML report:", htmlPath))
+		fmt.Fprintf(&b, "  %-18s %s\n", "HTML report:", htmlPath)
 	}
 	if m.reportPath != "" {
-		b.WriteString(fmt.Sprintf("  %-18s %s\n", "Unified report:", m.reportPath))
+		fmt.Fprintf(&b, "  %-18s %s\n", "Unified report:", m.reportPath)
 	}
 
 	b.WriteByte('\n')

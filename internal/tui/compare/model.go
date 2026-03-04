@@ -77,22 +77,22 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(tui.HeaderStyle.Render(title))
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Run A: %s   Run B: %s",
+	fmt.Fprintf(&b, "  Run A: %s   Run B: %s",
 		tui.DimStyle.Render(m.result.RunA.Start),
-		tui.DimStyle.Render(m.result.RunB.Start)))
+		tui.DimStyle.Render(m.result.RunB.Start))
 	b.WriteString("\n\n")
 
-	b.WriteString(fmt.Sprintf("  %-22s %12s %12s %12s\n", "Metric", "Run A", "Run B", "Delta"))
-	b.WriteString(fmt.Sprintf("  %-22s %12s %12s %12s\n",
+	fmt.Fprintf(&b, "  %-22s %12s %12s %12s\n", "Metric", "Run A", "Run B", "Delta")
+	fmt.Fprintf(&b, "  %-22s %12s %12s %12s\n",
 		strings.Repeat("\u2500", 22),
 		strings.Repeat("\u2500", 12),
 		strings.Repeat("\u2500", 12),
-		strings.Repeat("\u2500", 12)))
+		strings.Repeat("\u2500", 12))
 
 	for _, row := range m.result.K6Rows {
 		label, valA, valB := formatK6Row(row)
 		delta := formatDelta(row.Delta, row.Direction)
-		b.WriteString(fmt.Sprintf("  %-22s %12s %12s %s\n", label, valA, valB, delta))
+		fmt.Fprintf(&b, "  %-22s %12s %12s %s\n", label, valA, valB, delta)
 	}
 
 	b.WriteString("\n")
@@ -122,25 +122,25 @@ func (m Model) View() string {
 
 	if cpuRow != nil && (cpuRow.ValueA != "-" || cpuRow.ValueB != "-") {
 		delta := formatDelta(cpuRow.Delta, cpuRow.Direction)
-		b.WriteString(fmt.Sprintf("  %-22s %11s%% %11s%% %s\n", "ECS CPU peak", cpuRow.ValueA, cpuRow.ValueB, delta))
+		fmt.Fprintf(&b, "  %-22s %11s%% %11s%% %s\n", "ECS CPU peak", cpuRow.ValueA, cpuRow.ValueB, delta)
 	}
 	if memRow != nil && (memRow.ValueA != "-" || memRow.ValueB != "-") {
 		delta := formatDelta(memRow.Delta, memRow.Direction)
-		b.WriteString(fmt.Sprintf("  %-22s %11s%% %11s%% %s\n", "ECS memory peak", memRow.ValueA, memRow.ValueB, delta))
+		fmt.Fprintf(&b, "  %-22s %11s%% %11s%% %s\n", "ECS memory peak", memRow.ValueA, memRow.ValueB, delta)
 	}
 	if tasksBefore != nil && tasksAfter != nil {
-		b.WriteString(fmt.Sprintf("  %-22s %8s/%-3s %8s/%-3s\n", "Tasks (before/after)",
+		fmt.Fprintf(&b, "  %-22s %8s/%-3s %8s/%-3s\n", "Tasks (before/after)",
 			tasksBefore.ValueA, tasksAfter.ValueA,
-			tasksBefore.ValueB, tasksAfter.ValueB))
+			tasksBefore.ValueB, tasksAfter.ValueB)
 	}
 	if asgBefore != nil && asgAfter != nil {
-		b.WriteString(fmt.Sprintf("  %-22s %8s/%-3s %8s/%-3s\n", "ASG (before/after)",
+		fmt.Fprintf(&b, "  %-22s %8s/%-3s %8s/%-3s\n", "ASG (before/after)",
 			asgBefore.ValueA, asgAfter.ValueA,
-			asgBefore.ValueB, asgAfter.ValueB))
+			asgBefore.ValueB, asgAfter.ValueB)
 	}
 	if alb5xxRow != nil && (alb5xxRow.ValueA != "-" || alb5xxRow.ValueB != "-") {
 		delta := formatDelta(alb5xxRow.Delta, alb5xxRow.Direction)
-		b.WriteString(fmt.Sprintf("  %-22s %12s %12s %s\n", "ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, delta))
+		fmt.Fprintf(&b, "  %-22s %12s %12s %s\n", "ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, delta)
 	}
 
 	b.WriteString("\n")
