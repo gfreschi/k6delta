@@ -23,6 +23,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 	"github.com/gfreschi/k6delta/internal/tui/keys"
 )
@@ -186,31 +187,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case authOKMsg:
-		m.stepper.MarkDone(stepAuth, "verified")
+		flashCmd := m.stepper.MarkDone(stepAuth, "verified")
 		m.phase = phaseFetchState
 		m.stepper.MarkRunning(stepState)
-		return m, m.fetchState()
+		return m, tea.Batch(flashCmd, m.fetchState())
 
 	case stateDoneMsg:
 		m.snapshot = msg.snapshot
 		detail := fmt.Sprintf("tasks=%d/%d", msg.snapshot.TaskRunning, msg.snapshot.TaskDesired)
-		m.stepper.MarkDone(stepState, detail)
+		flashCmd := m.stepper.MarkDone(stepState, detail)
 		m.phase = phaseFetchMetrics
 		m.stepper.MarkRunning(stepMetrics)
-		return m, m.fetchMetrics()
+		return m, tea.Batch(flashCmd, m.fetchMetrics())
 
 	case metricsDoneMsg:
 		m.metrics = msg.metrics
-		m.stepper.MarkDone(stepMetrics, fmt.Sprintf("%d metric series", len(msg.metrics)))
+		flashCmd := m.stepper.MarkDone(stepMetrics, fmt.Sprintf("%d metric series", len(msg.metrics)))
 		m.phase = phaseFetchActivities
 		m.stepper.MarkRunning(stepActivities)
-		return m, m.fetchActivities()
+		return m, tea.Batch(flashCmd, m.fetchActivities())
 
 	case activitiesDoneMsg:
 		m.activities = msg.activities
 		detail := fmt.Sprintf("%d ECS, %d ASG, %d alarms",
 			len(msg.activities.ECSScaling), len(msg.activities.ASGScaling), len(msg.activities.Alarms))
-		m.stepper.MarkDone(stepActivities, detail)
+		flashCmd := m.stepper.MarkDone(stepActivities, detail)
 		m.phase = phaseDisplay
 		m.initDashboard()
 
@@ -219,6 +220,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = err
 			}
 		}
+		return m, flashCmd
+
+	case stepper.ClearFlashMsg:
+		m.stepper.ClearFlash(msg.Index)
 		return m, nil
 
 	case panel.TransitionTickMsg:
@@ -363,6 +368,7 @@ func (m *Model) initDashboard() {
 	m.eventsPanel.SetContent(m.renderActivitiesContent())
 
 	m.focusMgr = focus.New(3)
+	m.statePanel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
 		{Key: "q", Action: "quit"},
@@ -377,7 +383,7 @@ func (m *Model) resizeDashboardPanels() {
 	panelH := m.ctx.ContentHeight / 2
 	m.statePanel.SetDimensions(w, panelH)
 
-	if w >= 120 {
+	if w >= constants.BreakpointSplit {
 		metricsW := w * 55 / 100
 		eventsW := w - metricsW
 		m.metricsPanel.SetDimensions(metricsW, panelH)
@@ -393,21 +399,17 @@ func (m Model) viewDashboard() string {
 		return m.renderRawDisplay()
 	}
 
-	m.statePanel.SetFocused(m.focusMgr.IsFocused(0))
-	m.metricsPanel.SetFocused(m.focusMgr.IsFocused(1))
-	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
-
 	width := m.ctx.ContentWidth
 	stateView := m.statePanel.View()
 
 	switch {
-	case width >= 120:
+	case width >= constants.BreakpointSplit:
 		middle := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.metricsPanel.View(),
 			m.eventsPanel.View(),
 		)
 		return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
-	case width >= 80:
+	case width >= constants.BreakpointStacked:
 		return lipgloss.JoinVertical(lipgloss.Left,
 			stateView, m.metricsPanel.View(), m.eventsPanel.View())
 	default:

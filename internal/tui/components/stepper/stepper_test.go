@@ -101,6 +101,33 @@ func TestStepper_viewShowsDuration(t *testing.T) {
 	}
 }
 
+func TestStepper_flashClearedByMethod(t *testing.T) {
+	ctx := testContext()
+	s := stepper.NewModel(ctx, "Auth")
+	s.MarkRunning(0)
+	cmd := s.MarkDone(0, "verified")
+
+	// MarkDone should return a non-nil command (the auto-clear tick)
+	if cmd == nil {
+		t.Error("expected MarkDone to return a tea.Cmd for flash auto-clear")
+	}
+
+	// View should render without error while flash is active
+	view1 := s.View()
+	if !strings.Contains(view1, "Auth") {
+		t.Error("expected step name in view")
+	}
+
+	// Manually clear flash (simulating ClearFlashMsg handler)
+	s.ClearFlash(0)
+
+	// Verify flash state is cleared via View still working
+	view2 := s.View()
+	if !strings.Contains(view2, "Auth") {
+		t.Error("expected step name in view after clearing flash")
+	}
+}
+
 func TestStepper_viewShowsMinutesForLongDuration(t *testing.T) {
 	ctx := testContext()
 	s := stepper.NewModel(ctx, "Analysis")

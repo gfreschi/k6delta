@@ -7,9 +7,15 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
+
+// ClearFlashMsg signals that the flash for a step should be cleared.
+// Sent automatically by MarkDone after a brief delay.
+type ClearFlashMsg struct{ Index int }
 
 // StepStatus represents the current state of a step.
 type StepStatus int
@@ -73,16 +79,27 @@ func (m *Model) MarkRunning(index int) {
 	}
 }
 
-// MarkDone sets the step to StepDone, assigns the detail text, and computes duration.
-// Sets flash flag for a bright completion indicator on the next render.
-func (m *Model) MarkDone(index int, detail string) {
+// MarkDone sets the step to StepDone, assigns the detail text, computes duration,
+// and returns a tea.Cmd that auto-clears the flash after 150ms.
+func (m *Model) MarkDone(index int, detail string) tea.Cmd {
+	if index < 0 || index >= len(m.steps) {
+		return nil
+	}
+	if !m.steps[index].StartedAt.IsZero() {
+		m.steps[index].Duration = time.Since(m.steps[index].StartedAt)
+	}
+	m.steps[index].Status = StepDone
+	m.steps[index].Detail = detail
+	m.steps[index].flash = true
+	return tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg {
+		return ClearFlashMsg{Index: index}
+	})
+}
+
+// ClearFlash clears the flash flag for the given step index.
+func (m *Model) ClearFlash(index int) {
 	if index >= 0 && index < len(m.steps) {
-		if !m.steps[index].StartedAt.IsZero() {
-			m.steps[index].Duration = time.Since(m.steps[index].StartedAt)
-		}
-		m.steps[index].Status = StepDone
-		m.steps[index].Detail = detail
-		m.steps[index].flash = true
+		m.steps[index].flash = false
 	}
 }
 
@@ -109,7 +126,7 @@ func (m Model) View() string {
 	ds := m.ctx.Styles.Delta
 	var b strings.Builder
 
-	for i, s := range m.steps {
+	for _, s := range m.steps {
 		switch s.Status {
 		case StepPending:
 			b.WriteString("  " + constants.IconPending + " " + st.Pending.Render(s.Name))
@@ -127,7 +144,6 @@ func (m Model) View() string {
 			icon := cs.CheckMark
 			if s.flash {
 				icon = ds.BetterStrong.Render(constants.IconDone)
-				m.steps[i].flash = false
 			}
 			line := "  " + icon + " " + st.Done.Render(s.Name)
 			if s.Detail != "" {

@@ -75,10 +75,9 @@ type DeltaStyles struct {
 	Better        lipgloss.Style
 	BetterMild    lipgloss.Style
 	BetterStrong  lipgloss.Style
-	Worse         lipgloss.Style
-	WorseMild     lipgloss.Style
-	WorseModerate lipgloss.Style
-	WorseSevere   lipgloss.Style
+	Worse       lipgloss.Style
+	WorseMild   lipgloss.Style
+	WorseSevere lipgloss.Style
 	Neutral       lipgloss.Style
 }
 
@@ -88,10 +87,9 @@ func (ds DeltaStyles) Tiers() common.DeltaStyleTiers {
 		Better:        ds.Better,
 		BetterMild:    ds.BetterMild,
 		BetterStrong:  ds.BetterStrong,
-		Worse:         ds.Worse,
-		WorseMild:     ds.WorseMild,
-		WorseModerate: ds.WorseModerate,
-		WorseSevere:   ds.WorseSevere,
+		Worse:       ds.Worse,
+		WorseMild:   ds.WorseMild,
+		WorseSevere: ds.WorseSevere,
 		Neutral:       ds.Neutral,
 	}
 }
@@ -142,10 +140,9 @@ func InitStyles(t theme.Theme) Styles {
 			Better:        lipgloss.NewStyle().Foreground(t.DeltaBetter),
 			BetterMild:    lipgloss.NewStyle().Foreground(t.DeltaBetter).Faint(true),
 			BetterStrong:  lipgloss.NewStyle().Bold(true).Foreground(t.DeltaBetter),
-			Worse:         lipgloss.NewStyle().Foreground(t.DeltaWorse),
-			WorseMild:     lipgloss.NewStyle().Foreground(t.DeltaWorse).Faint(true),
-			WorseModerate: lipgloss.NewStyle().Foreground(t.DeltaWorse),
-			WorseSevere:   lipgloss.NewStyle().Bold(true).Foreground(t.DeltaWorse),
+			Worse:       lipgloss.NewStyle().Foreground(t.DeltaWorse),
+			WorseMild:   lipgloss.NewStyle().Foreground(t.DeltaWorse).Faint(true),
+			WorseSevere: lipgloss.NewStyle().Bold(true).Foreground(t.DeltaWorse),
 			Neutral:       lipgloss.NewStyle().Foreground(t.DeltaNeutral),
 		},
 	}

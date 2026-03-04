@@ -13,8 +13,10 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
-const transitionFrames = 3
-const transitionInterval = 50 * time.Millisecond
+const (
+	transitionFrames   = 3
+	transitionInterval = 50 * time.Millisecond
+)
 
 // TransitionTickMsg signals the panel to advance its border transition animation.
 type TransitionTickMsg struct{}
@@ -56,6 +58,11 @@ func (m *Model) SetContent(content string) {
 		lines++
 	}
 	m.overflow = lines > m.viewport.Height
+}
+
+// SetTitle updates the panel title without recreating the model.
+func (m *Model) SetTitle(title string) {
+	m.title = title
 }
 
 // SetFocused sets the focus state and triggers a border transition animation.

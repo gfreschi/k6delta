@@ -28,6 +28,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 	"github.com/gfreschi/k6delta/internal/tui/keys"
 )
@@ -263,10 +264,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case authOKMsg:
-		m.stepper.MarkDone(stepAuth, "verified")
+		flashCmd := m.stepper.MarkDone(stepAuth, "verified")
 		m.stepper.MarkRunning(stepPreSnapshot)
 		m.currentPhase = phasePreSnapshot
-		return m, m.fetchSnapshot("pre")
+		return m, tea.Batch(flashCmd, m.fetchSnapshot("pre"))
 
 	case snapshotMsg:
 		switch msg.label {
@@ -275,13 +276,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			detail := fmt.Sprintf("tasks=%d/%d asg=%d/%d",
 				msg.snapshot.TaskRunning, msg.snapshot.TaskDesired,
 				msg.snapshot.ASGInstances, msg.snapshot.ASGDesired)
-			m.stepper.MarkDone(stepPreSnapshot, detail)
+			flashCmd := m.stepper.MarkDone(stepPreSnapshot, detail)
 			m.stepper.MarkRunning(stepK6)
 			m.currentPhase = phaseK6Run
 			m.startTime = time.Now().UTC()
 
 			if !m.streamingSupported {
-				return m, m.runK6Fallback()
+				return m, tea.Batch(flashCmd, m.runK6Fallback())
 			}
 
 			// Start streaming k6 with live dashboard
@@ -295,6 +296,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				{Key: "q", Action: "quit"},
 			})
 			return m, tea.Batch(
+				flashCmd,
 				m.runK6Streaming(k6Ctx),
 				m.waitForK6Point(),
 				infraPollCmd(context.Background(), m.provider, 15*time.Second),
@@ -304,16 +306,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			detail := fmt.Sprintf("tasks=%d/%d asg=%d/%d",
 				msg.snapshot.TaskRunning, msg.snapshot.TaskDesired,
 				msg.snapshot.ASGInstances, msg.snapshot.ASGDesired)
-			m.stepper.MarkDone(stepPostSnapshot, detail)
+			flashCmd := m.stepper.MarkDone(stepPostSnapshot, detail)
 			if m.skipAnalyze {
-				m.stepper.MarkDone(stepAnalysis, "skipped")
+				flashCmd2 := m.stepper.MarkDone(stepAnalysis, "skipped")
 				m.stepper.MarkRunning(stepReport)
 				m.currentPhase = phaseReport
-				return m, m.buildReport()
+				return m, tea.Batch(flashCmd, flashCmd2, m.buildReport())
 			}
 			m.stepper.MarkRunning(stepAnalysis)
 			m.currentPhase = phaseAnalysis
-			return m, m.fetchAnalysis()
+			return m, tea.Batch(flashCmd, m.fetchAnalysis())
 		}
 
 	case k6PointMsg:
@@ -341,27 +343,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.result.ExitCode == 0 {
 			exitDetail += " (all thresholds passed)"
 		}
-		m.stepper.MarkDone(stepK6, exitDetail)
+		flashCmd := m.stepper.MarkDone(stepK6, exitDetail)
 		m.stepper.MarkRunning(stepPostSnapshot)
 		m.currentPhase = phasePostSnapshot
-		return m, m.fetchSnapshot("post")
+		return m, tea.Batch(flashCmd, m.fetchSnapshot("post"))
 
 	case analysisMsg:
 		m.metrics = msg.metrics
 		m.activities = msg.activities
 		detail := fmt.Sprintf("%d metrics", len(msg.metrics))
-		m.stepper.MarkDone(stepAnalysis, detail)
+		flashCmd := m.stepper.MarkDone(stepAnalysis, detail)
 		m.stepper.MarkRunning(stepReport)
 		m.currentPhase = phaseReport
-		return m, m.buildReport()
+		return m, tea.Batch(flashCmd, m.buildReport())
 
 	case reportMsg:
 		m.report = msg.report
 		m.reportPath = msg.path
-		m.stepper.MarkDone(stepReport, "written")
+		flashCmd := m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
 		m.initDashboard()
-		return m, nil
+		return m, flashCmd
 
 	case exportDoneMsg:
 		m.footerComp.SetHints([]footer.KeyHint{
@@ -375,6 +377,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case openDoneMsg:
+		return m, nil
+
+	case stepper.ClearFlashMsg:
+		m.stepper.ClearFlash(msg.Index)
 		return m, nil
 
 	case panel.TransitionTickMsg:
@@ -826,6 +832,7 @@ func (m *Model) initDashboard() {
 	m.eventsPanel.SetContent(m.renderEventsList())
 
 	m.focusMgr = focus.New(3)
+	m.k6Panel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
 		{Key: "q", Action: "quit"},
@@ -843,7 +850,7 @@ func (m *Model) resizeDashboardPanels() {
 
 	m.k6Panel.SetDimensions(w, panelH)
 
-	if w >= 120 {
+	if w >= constants.BreakpointSplit {
 		// Split: infra + events side by side
 		infraW := w * 55 / 100
 		eventsW := w - infraW
@@ -861,23 +868,19 @@ func (m Model) viewReportDashboard() string {
 		return m.renderReport()
 	}
 
-	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
-	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
-	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
-
 	width := m.ctx.ContentWidth
 	k6View := m.k6Panel.View()
 	verdict := m.renderVerdictBar()
 
 	switch {
-	case width >= 120:
+	case width >= constants.BreakpointSplit:
 		// Split: infra + events side by side
 		middle := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.infraPanel.View(),
 			m.eventsPanel.View(),
 		)
 		return lipgloss.JoinVertical(lipgloss.Left, k6View, middle, verdict)
-	case width >= 80:
+	case width >= constants.BreakpointStacked:
 		// Stacked: all panels vertical
 		return lipgloss.JoinVertical(lipgloss.Left,
 			k6View, m.infraPanel.View(), m.eventsPanel.View(), verdict)
@@ -1189,9 +1192,9 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 func (m Model) viewLiveDashboard() string {
 	width := m.ctx.ContentWidth
 	switch {
-	case width >= 120:
+	case width >= constants.BreakpointSplit:
 		return m.viewLiveSplit()
-	case width >= 80:
+	case width >= constants.BreakpointStacked:
 		return m.viewLiveStacked()
 	default:
 		return m.viewLiveFallback()

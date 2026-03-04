@@ -161,10 +161,7 @@ func (m Model) View() string {
 
 	// Panels (responsive: panels at >=80, fallback text at <80)
 	width := m.ctx.ContentWidth
-	if m.focusMgr != nil && width >= 80 {
-		m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
-		m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
-
+	if m.focusMgr != nil && width >= constants.BreakpointStacked {
 		sections = append(sections, m.k6Panel.View())
 		sections = append(sections, m.infraPanel.View())
 	} else if m.focusMgr != nil {
@@ -191,6 +188,7 @@ func (m *Model) initDashboard() {
 	m.infraPanel.SetContent(m.renderInfraTable())
 
 	m.focusMgr = focus.New(2)
+	m.k6Panel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
 		{Key: "tab", Action: "next panel"},
@@ -212,10 +210,7 @@ func (m *Model) refreshPanels() {
 	if m.focusMgr == nil {
 		return
 	}
-	// Recreate panels to update title (reflects sort mode)
-	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight / 2
-	m.k6Panel = panel.NewModel(m.ctx, m.k6PanelTitle(), w, panelH)
+	m.k6Panel.SetTitle(m.k6PanelTitle())
 	m.k6Panel.SetContent(m.renderK6Table())
 	m.infraPanel.SetContent(m.renderInfraTable())
 }
@@ -408,7 +403,7 @@ func (m Model) formatDelta(delta, direction, metric string) string {
 
 	// Only show direction word when terminal is wide enough
 	dirWord := ""
-	if m.ctx.ContentWidth >= 100 {
+	if m.ctx.ContentWidth >= constants.BreakpointNarrow {
 		switch direction {
 		case "better":
 			dirWord = " better"

@@ -12,10 +12,9 @@ type DeltaStyleTiers struct {
 	Better        lipgloss.Style
 	BetterMild    lipgloss.Style
 	BetterStrong  lipgloss.Style
-	Worse         lipgloss.Style
-	WorseMild     lipgloss.Style
-	WorseModerate lipgloss.Style
-	WorseSevere   lipgloss.Style
+	Worse       lipgloss.Style
+	WorseMild   lipgloss.Style
+	WorseSevere lipgloss.Style
 	Neutral       lipgloss.Style
 }
 
@@ -40,7 +39,7 @@ func DeltaStyle(ds DeltaStyleTiers, pctChange float64, lowerIsBetter bool) lipgl
 	case isRegression && absPct < 5:
 		return ds.WorseMild
 	case isRegression && absPct < 15:
-		return ds.WorseModerate
+		return ds.Worse
 	case isRegression:
 		return ds.WorseSevere
 	default:

@@ -16,6 +16,13 @@ const (
 	HeaderHeight     = 2
 )
 
+// Responsive breakpoints.
+const (
+	BreakpointSplit   = 120 // side-by-side panel layout
+	BreakpointStacked = 80  // vertical stack layout
+	BreakpointNarrow  = 100 // reduced detail (e.g., omit direction words)
+)
+
 // Icons used across TUI components.
 const (
 	IconPending = "◯"

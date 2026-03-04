@@ -77,6 +77,26 @@ func TestPanel_scrollPosition(t *testing.T) {
 	}
 }
 
+func TestPanel_setTitle(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Original", 40, 10)
+	p.SetContent("content")
+
+	view1 := p.View()
+	if !strings.Contains(view1, "Original") {
+		t.Error("expected 'Original' in view")
+	}
+
+	p.SetTitle("Updated")
+	view2 := p.View()
+	if !strings.Contains(view2, "Updated") {
+		t.Error("expected 'Updated' in view after SetTitle")
+	}
+	if strings.Contains(view2, "Original") {
+		t.Error("old title should not appear after SetTitle")
+	}
+}
+
 func TestPanel_scrollUpWraps(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	p := panel.NewModel(ctx, "Test", 40, 10)
