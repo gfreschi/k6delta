@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -15,7 +14,11 @@ import (
 
 	"github.com/gfreschi/k6delta/internal/config"
 	"github.com/gfreschi/k6delta/internal/provider"
-	"github.com/gfreschi/k6delta/internal/tui"
+	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
+	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
 type analyzePhase int
@@ -47,24 +50,34 @@ type Model struct {
 	jsonOutput bool
 	outputFile string
 
-	steps *tui.StepTracker
-	phase analyzePhase
+	ctx        *tuictx.ProgramContext
+	stepper    stepper.Model
+	headerComp header.Model
+	footerComp footer.Model
+	phase      analyzePhase
 
 	snapshot   provider.Snapshot
 	metrics    []provider.MetricResult
 	activities provider.Activities
 
 	spinner  spinner.Model
-	width    int
-	height   int
 	err      error
 	quitting bool
 }
 
 // NewModel creates a new analyze TUI model.
 func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, jsonOutput bool, outputFile string) Model {
+	ctx := tuictx.New(80, 24)
+
 	s := spinner.New(spinner.WithSpinner(spinner.Dot),
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("12"))))
+		spinner.WithStyle(lipgloss.NewStyle().Foreground(ctx.Theme.HeaderText)))
+
+	st := stepper.NewModel(ctx, "AWS credentials", "Current state", "CloudWatch metrics", "Scaling activities")
+
+	hdr := header.NewModel(ctx, app.Name, app.Env, "analyze")
+	ftr := footer.NewModel(ctx, []footer.KeyHint{
+		{Key: "q", Action: "quit"},
+	})
 
 	return Model{
 		app:        app,
@@ -74,7 +87,10 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, en
 		period:     period,
 		jsonOutput: jsonOutput,
 		outputFile: outputFile,
-		steps:      tui.NewStepTracker("AWS credentials", "Current state", "CloudWatch metrics", "Scaling activities"),
+		ctx:        ctx,
+		stepper:    st,
+		headerComp: hdr,
+		footerComp: ftr,
 		phase:      phaseAuth,
 		spinner:    s,
 	}
@@ -107,8 +123,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.ctx.Resize(msg.Width, msg.Height)
+		m.headerComp.UpdateContext(m.ctx)
+		m.stepper.UpdateContext(m.ctx)
+		m.footerComp.UpdateContext(m.ctx)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -117,40 +135,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ProgressMsg:
 		detail := fmt.Sprintf("%s [%d/%d]", msg.ID, msg.Current, msg.Total)
-		for i := range m.steps.Steps {
-			if m.steps.Steps[i].Status == tui.StepRunning {
-				m.steps.SetDetail(i, detail)
+		for i, step := range m.stepper.Steps() {
+			if step.Status == stepper.StepRunning {
+				m.stepper.SetDetail(i, detail)
 				break
 			}
 		}
 		return m, nil
 
 	case authOKMsg:
-		m.steps.MarkDone(stepAuth, "verified")
+		m.stepper.MarkDone(stepAuth, "verified")
 		m.phase = phaseFetchState
-		m.steps.MarkRunning(stepState)
+		m.stepper.MarkRunning(stepState)
 		return m, m.fetchState()
 
 	case stateDoneMsg:
 		m.snapshot = msg.snapshot
 		detail := fmt.Sprintf("tasks=%d/%d", msg.snapshot.TaskRunning, msg.snapshot.TaskDesired)
-		m.steps.MarkDone(stepState, detail)
+		m.stepper.MarkDone(stepState, detail)
 		m.phase = phaseFetchMetrics
-		m.steps.MarkRunning(stepMetrics)
+		m.stepper.MarkRunning(stepMetrics)
 		return m, m.fetchMetrics()
 
 	case metricsDoneMsg:
 		m.metrics = msg.metrics
-		m.steps.MarkDone(stepMetrics, fmt.Sprintf("%d metric series", len(msg.metrics)))
+		m.stepper.MarkDone(stepMetrics, fmt.Sprintf("%d metric series", len(msg.metrics)))
 		m.phase = phaseFetchActivities
-		m.steps.MarkRunning(stepActivities)
+		m.stepper.MarkRunning(stepActivities)
 		return m, m.fetchActivities()
 
 	case activitiesDoneMsg:
 		m.activities = msg.activities
 		detail := fmt.Sprintf("%d ECS, %d ASG, %d alarms",
 			len(msg.activities.ECSScaling), len(msg.activities.ASGScaling), len(msg.activities.Alarms))
-		m.steps.MarkDone(stepActivities, detail)
+		m.stepper.MarkDone(stepActivities, detail)
 		m.phase = phaseDisplay
 
 		if m.outputFile != "" {
@@ -162,9 +180,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		m.err = msg.err
-		for i := range m.steps.Steps {
-			if m.steps.Steps[i].Status == tui.StepRunning {
-				m.steps.MarkFailed(i, msg.err.Error())
+		for i, step := range m.stepper.Steps() {
+			if step.Status == stepper.StepRunning {
+				m.stepper.MarkFailed(i, msg.err.Error())
 				break
 			}
 		}
@@ -238,127 +256,111 @@ func (m Model) View() string {
 		return ""
 	}
 
-	var b strings.Builder
+	s := m.ctx.Styles
+	var sections []string
 
-	b.WriteString(tui.HeaderStyle.Render(fmt.Sprintf("Scaling Analysis: %s (%s)", m.app.Name, m.app.Env)))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-	fmt.Fprintf(&b, "  %s  %s\n", tui.DimStyle.Render("Cluster:"), m.app.Cluster)
-	fmt.Fprintf(&b, "  %s  %s\n", tui.DimStyle.Render("Service:"), m.app.Service)
-	fmt.Fprintf(&b, "  %s   %s -> %s\n", tui.DimStyle.Render("Window:"), m.startTime, m.endTime)
-	fmt.Fprintf(&b, "  %s   %ds\n", tui.DimStyle.Render("Period:"), m.period)
-	b.WriteByte('\n')
+	sections = append(sections, m.headerComp.View(), "")
+	sections = append(sections,
+		fmt.Sprintf("  %s  %s", s.Common.FaintTextStyle.Render("Cluster:"), m.app.Cluster),
+		fmt.Sprintf("  %s  %s", s.Common.FaintTextStyle.Render("Service:"), m.app.Service),
+		fmt.Sprintf("  %s   %s -> %s", s.Common.FaintTextStyle.Render("Window:"), m.startTime, m.endTime),
+		fmt.Sprintf("  %s   %ds", s.Common.FaintTextStyle.Render("Period:"), m.period),
+		"")
 
 	if m.phase != phaseDisplay {
-		b.WriteString(m.steps.View())
+		sections = append(sections, m.stepper.View())
 		if m.err == nil {
-			fmt.Fprintf(&b, "\n  %s\n", m.spinner.View())
+			sections = append(sections, "  "+m.spinner.View())
 		}
 		if m.err != nil {
-			b.WriteByte('\n')
-			b.WriteString(tui.ErrorStyle.Render(fmt.Sprintf("  Error: %s", m.err.Error())))
-			b.WriteByte('\n')
-			b.WriteByte('\n')
-			b.WriteString(tui.DimStyle.Render("  Press q to quit"))
-			b.WriteByte('\n')
+			sections = append(sections, "",
+				s.Common.ErrorStyle.Render(fmt.Sprintf("  Error: %s", m.err.Error())),
+				"", m.footerComp.View())
 		}
-		return b.String()
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
 	// Current State
-	b.WriteString(tui.HeaderStyle.Render("Current State"))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-	fmt.Fprintf(&b, "  ECS Tasks:  running=%d  desired=%d\n",
-		m.snapshot.TaskRunning, m.snapshot.TaskDesired)
+	sections = append(sections, s.Header.Root.Render("Current State"), "")
+	sections = append(sections, fmt.Sprintf("  ECS Tasks:  running=%d  desired=%d",
+		m.snapshot.TaskRunning, m.snapshot.TaskDesired))
 	if m.snapshot.ASGName != "" {
-		fmt.Fprintf(&b, "  ASG:        in_service=%d  desired=%d\n",
-			m.snapshot.ASGInstances, m.snapshot.ASGDesired)
+		sections = append(sections, fmt.Sprintf("  ASG:        in_service=%d  desired=%d",
+			m.snapshot.ASGInstances, m.snapshot.ASGDesired))
 	}
-	b.WriteByte('\n')
+	sections = append(sections, "")
 
 	// Metrics
-	b.WriteString(tui.HeaderStyle.Render("Metrics"))
-	b.WriteByte('\n')
-	b.WriteString(renderMetricTableHeader())
+	sections = append(sections, s.Header.Root.Render("Metrics"))
+	var metricRows []table.Row
 	for _, mr := range m.metrics {
-		b.WriteString(renderMetricRow(mr))
+		if mr.Peak == nil || mr.Avg == nil {
+			metricRows = append(metricRows, table.Row{mr.ID, "-", "-", fmt.Sprintf("%d", len(mr.Values))})
+		} else {
+			metricRows = append(metricRows, table.Row{mr.ID,
+				fmt.Sprintf("%.2f", *mr.Peak),
+				fmt.Sprintf("%.2f", *mr.Avg),
+				fmt.Sprintf("%d", len(mr.Values))})
+		}
 	}
-	b.WriteByte('\n')
+	metricTbl := table.NewModel(m.ctx, []table.Column{
+		{Title: "Metric", Width: 35},
+		{Title: "Peak", Width: 10, Align: lipgloss.Right},
+		{Title: "Avg", Width: 10, Align: lipgloss.Right},
+		{Title: "Points", Width: 8, Align: lipgloss.Right},
+	})
+	metricTbl.SetRows(metricRows)
+	sections = append(sections, metricTbl.View(), "")
 
 	// Scaling Activities
-	b.WriteString(tui.HeaderStyle.Render("Scaling Activities"))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
+	sections = append(sections, s.Header.Root.Render("Scaling Activities"), "")
 	hasActivities := len(m.activities.ECSScaling) > 0 || len(m.activities.ASGScaling) > 0
 	if hasActivities {
 		if len(m.activities.ECSScaling) > 0 {
-			b.WriteString(tui.DimStyle.Render("  ECS Task Scaling:"))
-			b.WriteByte('\n')
+			sections = append(sections, s.Common.FaintTextStyle.Render("  ECS Task Scaling:"))
 			for _, a := range m.activities.ECSScaling {
 				desc := a.Description
 				if desc == "" {
 					desc = a.Cause
 				}
-				fmt.Fprintf(&b, "    %s  %s  %s\n", a.Time, a.Status, desc)
+				sections = append(sections, fmt.Sprintf("    %s  %s  %s", a.Time, a.Status, desc))
 			}
-			b.WriteByte('\n')
+			sections = append(sections, "")
 		}
 		if len(m.activities.ASGScaling) > 0 {
-			b.WriteString(tui.DimStyle.Render("  ASG Scaling:"))
-			b.WriteByte('\n')
+			sections = append(sections, s.Common.FaintTextStyle.Render("  ASG Scaling:"))
 			for _, a := range m.activities.ASGScaling {
 				desc := a.Description
 				if desc == "" {
 					desc = a.Cause
 				}
-				fmt.Fprintf(&b, "    %s  %s  %s\n", a.Time, a.Status, desc)
+				sections = append(sections, fmt.Sprintf("    %s  %s  %s", a.Time, a.Status, desc))
 			}
-			b.WriteByte('\n')
+			sections = append(sections, "")
 		}
 	} else {
-		b.WriteString(tui.DimStyle.Render("  No scaling activities during test window"))
-		b.WriteByte('\n')
-		b.WriteByte('\n')
+		sections = append(sections, s.Common.FaintTextStyle.Render("  No scaling activities during test window"), "")
 	}
 
 	// Alarm History
 	if len(m.activities.Alarms) > 0 {
-		b.WriteString(tui.HeaderStyle.Render("Alarm History"))
-		b.WriteByte('\n')
-		b.WriteByte('\n')
+		sections = append(sections, s.Header.Root.Render("Alarm History"), "")
 		for _, a := range m.activities.Alarms {
-			fmt.Fprintf(&b, "  %s  %s  %s -> %s\n", a.Time, a.AlarmName, a.OldState, a.NewState)
+			sections = append(sections, fmt.Sprintf("  %s  %s  %s -> %s", a.Time, a.AlarmName, a.OldState, a.NewState))
 		}
-		b.WriteByte('\n')
+		sections = append(sections, "")
 	}
 
 	if m.outputFile != "" && m.err == nil {
-		b.WriteString(tui.SuccessStyle.Render(fmt.Sprintf("JSON report written to: %s", m.outputFile)))
-		b.WriteByte('\n')
-		b.WriteByte('\n')
+		sections = append(sections, s.Common.SuccessStyle.Render(fmt.Sprintf("JSON report written to: %s", m.outputFile)), "")
 	}
 
-	b.WriteString(tui.DimStyle.Render("Press q to quit"))
-	b.WriteByte('\n')
+	sections = append(sections, m.footerComp.View())
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 // --- View helpers ---
-
-func renderMetricTableHeader() string {
-	return fmt.Sprintf("  %-35s %10s %10s %8s\n  %-35s %10s %10s %8s\n",
-		"Metric", "Peak", "Avg", "Points",
-		strings.Repeat("-", 35), strings.Repeat("-", 10), strings.Repeat("-", 10), strings.Repeat("-", 8))
-}
-
-func renderMetricRow(mr provider.MetricResult) string {
-	if mr.Peak == nil || mr.Avg == nil {
-		return fmt.Sprintf("  %-35s %10s %10s %8d\n", mr.ID, "-", "-", len(mr.Values))
-	}
-	return fmt.Sprintf("  %-35s %10.2f %10.2f %8d\n", mr.ID, *mr.Peak, *mr.Avg, len(mr.Values))
-}
 
 // --- JSON output ---
 

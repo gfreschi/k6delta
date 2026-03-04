@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -18,7 +17,11 @@ import (
 	k6runner "github.com/gfreschi/k6delta/internal/k6"
 	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/report"
-	"github.com/gfreschi/k6delta/internal/tui"
+	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
+	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
 type runPhase int
@@ -50,8 +53,12 @@ type Model struct {
 	baseURL     string
 	skipAnalyze bool
 
+	ctx *tuictx.ProgramContext
+
 	currentPhase  runPhase
-	steps         *tui.StepTracker
+	stepper       stepper.Model
+	headerComp    header.Model
+	footerComp    footer.Model
 	resultsPrefix string
 
 	preSnapshot  provider.Snapshot
@@ -68,8 +75,6 @@ type Model struct {
 	endTime   time.Time
 
 	spinner  spinner.Model
-	width    int
-	height   int
 	err      error
 	quitting bool
 }
@@ -99,10 +104,12 @@ type ProgressMsg struct {
 
 // NewModel creates a new run Model.
 func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool) Model {
-	s := spinner.New(spinner.WithSpinner(spinner.Dot))
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("12"))
+	ctx := tuictx.New(80, 24)
 
-	steps := tui.NewStepTracker(
+	s := spinner.New(spinner.WithSpinner(spinner.Dot))
+	s.Style = lipgloss.NewStyle().Foreground(ctx.Theme.HeaderText)
+
+	st := stepper.NewModel(ctx,
 		"AWS credentials",
 		"Pre-snapshot",
 		"Running k6",
@@ -111,6 +118,11 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		"Report",
 	)
 
+	hdr := header.NewModel(ctx, app.Name, app.Env, app.Phase)
+	ftr := footer.NewModel(ctx, []footer.KeyHint{
+		{Key: "q", Action: "quit"},
+	})
+
 	prefix := k6runner.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
 
 	return Model{
@@ -118,8 +130,11 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		provider:      prov,
 		baseURL:       baseURL,
 		skipAnalyze:   skipAnalyze,
+		ctx:           ctx,
 		currentPhase:  phaseInit,
-		steps:         steps,
+		stepper:       st,
+		headerComp:    hdr,
+		footerComp:    ftr,
 		resultsPrefix: prefix,
 		spinner:       s,
 	}
@@ -139,8 +154,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.ctx.Resize(msg.Width, msg.Height)
+		m.headerComp.UpdateContext(m.ctx)
+		m.stepper.UpdateContext(m.ctx)
+		m.footerComp.UpdateContext(m.ctx)
 		return m, nil
 
 	case spinner.TickMsg:
@@ -150,12 +167,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ProgressMsg:
 		detail := fmt.Sprintf("%s [%d/%d]", msg.ID, msg.Current, msg.Total)
-		m.steps.SetDetail(m.currentStepIndex(), detail)
+		m.stepper.SetDetail(m.currentStepIndex(), detail)
 		return m, nil
 
 	case authOKMsg:
-		m.steps.MarkDone(stepAuth, "verified")
-		m.steps.MarkRunning(stepPreSnapshot)
+		m.stepper.MarkDone(stepAuth, "verified")
+		m.stepper.MarkRunning(stepPreSnapshot)
 		m.currentPhase = phasePreSnapshot
 		return m, m.fetchSnapshot("pre")
 
@@ -166,8 +183,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			detail := fmt.Sprintf("tasks=%d/%d asg=%d/%d",
 				msg.snapshot.TaskRunning, msg.snapshot.TaskDesired,
 				msg.snapshot.ASGInstances, msg.snapshot.ASGDesired)
-			m.steps.MarkDone(stepPreSnapshot, detail)
-			m.steps.MarkRunning(stepK6)
+			m.stepper.MarkDone(stepPreSnapshot, detail)
+			m.stepper.MarkRunning(stepK6)
 			m.currentPhase = phaseK6Run
 			m.startTime = time.Now().UTC()
 			return m, m.runK6()
@@ -176,14 +193,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			detail := fmt.Sprintf("tasks=%d/%d asg=%d/%d",
 				msg.snapshot.TaskRunning, msg.snapshot.TaskDesired,
 				msg.snapshot.ASGInstances, msg.snapshot.ASGDesired)
-			m.steps.MarkDone(stepPostSnapshot, detail)
+			m.stepper.MarkDone(stepPostSnapshot, detail)
 			if m.skipAnalyze {
-				m.steps.MarkDone(stepAnalysis, "skipped")
-				m.steps.MarkRunning(stepReport)
+				m.stepper.MarkDone(stepAnalysis, "skipped")
+				m.stepper.MarkRunning(stepReport)
 				m.currentPhase = phaseReport
 				return m, m.buildReport()
 			}
-			m.steps.MarkRunning(stepAnalysis)
+			m.stepper.MarkRunning(stepAnalysis)
 			m.currentPhase = phaseAnalysis
 			return m, m.fetchAnalysis()
 		}
@@ -195,8 +212,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.result.ExitCode == 0 {
 			exitDetail += " (all thresholds passed)"
 		}
-		m.steps.MarkDone(stepK6, exitDetail)
-		m.steps.MarkRunning(stepPostSnapshot)
+		m.stepper.MarkDone(stepK6, exitDetail)
+		m.stepper.MarkRunning(stepPostSnapshot)
 		m.currentPhase = phasePostSnapshot
 		return m, m.fetchSnapshot("post")
 
@@ -204,22 +221,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.metrics = msg.metrics
 		m.activities = msg.activities
 		detail := fmt.Sprintf("%d metrics", len(msg.metrics))
-		m.steps.MarkDone(stepAnalysis, detail)
-		m.steps.MarkRunning(stepReport)
+		m.stepper.MarkDone(stepAnalysis, detail)
+		m.stepper.MarkRunning(stepReport)
 		m.currentPhase = phaseReport
 		return m, m.buildReport()
 
 	case reportMsg:
 		m.report = msg.report
 		m.reportPath = msg.path
-		m.steps.MarkDone(stepReport, "written")
+		m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
 		return m, nil
 
 	case errMsg:
 		m.err = msg.err
 		stepIdx := m.currentStepIndex()
-		m.steps.MarkFailed(stepIdx, msg.err.Error())
+		m.stepper.MarkFailed(stepIdx, msg.err.Error())
 		return m, nil
 	}
 
@@ -231,39 +248,27 @@ func (m Model) View() string {
 		return ""
 	}
 
-	var b strings.Builder
+	cs := m.ctx.Styles.Common
+	var sections []string
 
-	header := fmt.Sprintf("k6delta: %s (%s) -- %s", m.app.Name, m.app.Env, m.app.Phase)
-	b.WriteString(tui.HeaderStyle.Render(header))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
-
-	b.WriteString(m.steps.View())
+	sections = append(sections, m.headerComp.View(), "")
+	sections = append(sections, m.stepper.View())
 
 	if m.err != nil {
-		b.WriteByte('\n')
-		b.WriteString(tui.ErrorStyle.Render("Error: " + m.err.Error()))
-		b.WriteByte('\n')
-		b.WriteByte('\n')
-		b.WriteString(tui.DimStyle.Render("Press q to quit"))
-		b.WriteByte('\n')
-		return b.String()
+		sections = append(sections, cs.ErrorStyle.Render("Error: "+m.err.Error()), "")
+		sections = append(sections, m.footerComp.View())
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
 	if m.currentPhase != phaseDone {
-		b.WriteByte('\n')
-		b.WriteString(m.spinner.View() + " " + m.phaseDescription())
-		b.WriteByte('\n')
-		return b.String()
+		sections = append(sections, m.spinner.View()+" "+m.phaseDescription())
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
-	b.WriteByte('\n')
-	b.WriteString(m.renderReport())
-	b.WriteByte('\n')
-	b.WriteString(tui.DimStyle.Render("Press q to quit"))
-	b.WriteByte('\n')
+	sections = append(sections, m.renderReport(), "")
+	sections = append(sections, m.footerComp.View())
 
-	return b.String()
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 // --- Commands ---
@@ -450,76 +455,85 @@ func (m Model) phaseDescription() string {
 }
 
 func (m Model) renderReport() string {
-	var b strings.Builder
-	separatorLine := strings.Repeat("-", 60)
+	s := m.ctx.Styles
+	var sections []string
 
-	b.WriteString(tui.TitleStyle.Render("Load Test Report"))
-	b.WriteByte('\n')
-	b.WriteByte('\n')
+	sections = append(sections, s.Header.Title.Render("Load Test Report"), "")
 
 	// Duration and k6 exit
 	duration := m.endTime.Sub(m.startTime)
 	minutes := int(duration.Minutes())
 	seconds := int(duration.Seconds()) % 60
-	fmt.Fprintf(&b, "  %s%s -> %s  (%dm %ds)\n",
-		tui.LabelStyle.Render("Duration"),
+	sections = append(sections, fmt.Sprintf("  %s%s -> %s  (%dm %ds)",
+		s.Table.Label.Render("Duration"),
 		m.startTime.Format("15:04:05"),
 		m.endTime.Format("15:04:05"),
-		minutes, seconds)
+		minutes, seconds))
 
 	exitStr := "0 (all thresholds passed)"
-	exitStyle := tui.SuccessStyle
+	exitStyle := s.Verdict.Pass
 	if m.k6Result != nil && m.k6Result.ExitCode != 0 {
 		exitStr = fmt.Sprintf("%d (threshold failures)", m.k6Result.ExitCode)
-		exitStyle = tui.WarnStyle
+		exitStyle = s.Verdict.Warn
 	}
-	fmt.Fprintf(&b, "  %s%s\n",
-		tui.LabelStyle.Render("k6 exit"),
-		exitStyle.Render(exitStr))
+	sections = append(sections, fmt.Sprintf("  %s%s",
+		s.Table.Label.Render("k6 exit"),
+		exitStyle.Render(exitStr)))
 
 	// k6 metrics table
 	if m.report != nil && m.report.K6 != nil {
 		k6 := m.report.K6
-		b.WriteByte('\n')
-		fmt.Fprintf(&b, "  %-26s %s\n", "Metric", "Value")
-		b.WriteString("  " + separatorLine[:50])
-		b.WriteByte('\n')
-		fmt.Fprintf(&b, "  %-26s %s\n", "p95 latency", fmtFloatMs(k6.P95ms))
-		fmt.Fprintf(&b, "  %-26s %s\n", "Error rate", fmtPct(k6.ErrorRate))
-		fmt.Fprintf(&b, "  %-26s %s\n", "Throughput", fmtFloatRate(k6.RPSAvg))
-		fmt.Fprintf(&b, "  %-26s %s\n", "Checks", fmtPctRate(k6.ChecksRate))
-		fmt.Fprintf(&b, "  %-26s %s\n", "Thresholds",
-			fmt.Sprintf("%d passed, %d failed", k6.Thresholds.Passed, k6.Thresholds.Failed))
+		tbl := table.NewModel(m.ctx, []table.Column{
+			{Title: "Metric", Width: 26},
+			{Title: "Value", Width: 24},
+		})
+		tbl.SetRows([]table.Row{
+			{"p95 latency", fmtFloatMs(k6.P95ms)},
+			{"Error rate", fmtPct(k6.ErrorRate)},
+			{"Throughput", fmtFloatRate(k6.RPSAvg)},
+			{"Checks", fmtPctRate(k6.ChecksRate)},
+			{"Thresholds", fmt.Sprintf("%d passed, %d failed", k6.Thresholds.Passed, k6.Thresholds.Failed)},
+		})
+		sections = append(sections, "", tbl.View())
 	}
 
 	// Infrastructure with delta column
-	b.WriteByte('\n')
-	fmt.Fprintf(&b, "  %-26s %-12s %-12s %s\n", "Infrastructure", "Before", "After", "Delta")
-	b.WriteString("  " + separatorLine)
-	b.WriteByte('\n')
-	fmt.Fprintf(&b, "  %-26s %-12d %-12d %s\n", "ECS tasks",
-		m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning,
-		fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning))
-	fmt.Fprintf(&b, "  %-26s %-12d %-12d %s\n", "EC2 instances",
-		m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances,
-		fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances))
+	infraTbl := table.NewModel(m.ctx, []table.Column{
+		{Title: "Infrastructure", Width: 26},
+		{Title: "Before", Width: 12},
+		{Title: "After", Width: 12},
+		{Title: "Delta", Width: 10},
+	})
+	infraTbl.SetRows([]table.Row{
+		{"ECS tasks", fmt.Sprintf("%d", m.preSnapshot.TaskRunning), fmt.Sprintf("%d", m.postSnapshot.TaskRunning),
+			fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning)},
+		{"EC2 instances", fmt.Sprintf("%d", m.preSnapshot.ASGInstances), fmt.Sprintf("%d", m.postSnapshot.ASGInstances),
+			fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances)},
+	})
+	sections = append(sections, "", infraTbl.View())
 
 	// CloudWatch peaks
 	if len(m.metrics) > 0 {
-		b.WriteByte('\n')
-		fmt.Fprintf(&b, "  %-26s %12s %12s\n", "CloudWatch Peaks", "Peak", "Avg")
-		b.WriteString("  " + separatorLine)
-		b.WriteByte('\n')
+		var rows []table.Row
 		for _, mr := range m.metrics {
 			label := metricLabel(mr.ID)
 			if label == "" {
 				continue
 			}
 			if mr.Peak != nil && mr.Avg != nil {
-				fmt.Fprintf(&b, "  %-26s %12s %12s\n", label,
+				rows = append(rows, table.Row{label,
 					fmtMetricValue(mr.ID, *mr.Peak),
-					fmtMetricValue(mr.ID, *mr.Avg))
+					fmtMetricValue(mr.ID, *mr.Avg)})
 			}
+		}
+		if len(rows) > 0 {
+			cwTbl := table.NewModel(m.ctx, []table.Column{
+				{Title: "CloudWatch Peaks", Width: 26},
+				{Title: "Peak", Width: 12, Align: lipgloss.Right},
+				{Title: "Avg", Width: 12, Align: lipgloss.Right},
+			})
+			cwTbl.SetRows(rows)
+			sections = append(sections, "", cwTbl.View())
 		}
 	}
 
@@ -550,18 +564,16 @@ func (m Model) renderReport() string {
 		activities:  m.activities,
 	})
 
-	b.WriteByte('\n')
-	var verdictStyle func(strs ...string) string
+	var verdictStyle lipgloss.Style
 	switch v.level {
 	case verdictFail:
-		verdictStyle = tui.ErrorStyle.Render
+		verdictStyle = s.Verdict.Fail
 	case verdictWarn:
-		verdictStyle = tui.WarnStyle.Render
+		verdictStyle = s.Verdict.Warn
 	default:
-		verdictStyle = tui.SuccessStyle.Render
+		verdictStyle = s.Verdict.Pass
 	}
-	b.WriteString("  " + tui.BoldStyle.Render("Verdict: ") + verdictStyle(v.level.String()))
-	b.WriteByte('\n')
+	sections = append(sections, "", "  "+s.Common.BoldStyle.Render("Verdict: ")+verdictStyle.Render(v.level.String()))
 	for _, reason := range v.reasons {
 		icon := "\u2713"
 		switch v.level {
@@ -570,26 +582,25 @@ func (m Model) renderReport() string {
 		case verdictWarn:
 			icon = "\u26a0"
 		}
-		fmt.Fprintf(&b, "  %s %s\n", icon, reason)
+		sections = append(sections, fmt.Sprintf("  %s %s", icon, reason))
 	}
 
 	// Output files
-	b.WriteByte('\n')
-	b.WriteString("  Output Files\n")
+	sections = append(sections, "", "  Output Files")
 	k6SummaryPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")
 	if _, err := os.Stat(k6SummaryPath); err == nil {
-		fmt.Fprintf(&b, "  %-18s %s\n", "k6 summary:", k6SummaryPath)
+		sections = append(sections, fmt.Sprintf("  %-18s %s", "k6 summary:", k6SummaryPath))
 	}
 	htmlPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")
 	if _, err := os.Stat(htmlPath); err == nil {
-		fmt.Fprintf(&b, "  %-18s %s\n", "HTML report:", htmlPath)
+		sections = append(sections, fmt.Sprintf("  %-18s %s", "HTML report:", htmlPath))
 	}
 	if m.reportPath != "" {
-		fmt.Fprintf(&b, "  %-18s %s\n", "Unified report:", m.reportPath)
+		sections = append(sections, fmt.Sprintf("  %-18s %s", "Unified report:", m.reportPath))
 	}
 
-	b.WriteByte('\n')
-	return b.String()
+	sections = append(sections, "")
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func fmtFloatMs(v *float64) string {

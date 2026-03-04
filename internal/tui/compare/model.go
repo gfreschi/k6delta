@@ -6,8 +6,13 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/gfreschi/k6delta/internal/report"
-	"github.com/gfreschi/k6delta/internal/tui"
+	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
 type errMsg struct{ err error }
@@ -18,15 +23,23 @@ type Model struct {
 	pathA    string
 	pathB    string
 	result   *report.ComparisonResult
+
+	ctx        *tuictx.ProgramContext
+	headerComp header.Model
+	footerComp footer.Model
+
 	err      error
 	quitting bool
-	width    int
-	height   int
 }
 
 // NewModel creates a new compare TUI model for the two given report paths.
 func NewModel(pathA, pathB string) Model {
-	return Model{pathA: pathA, pathB: pathB}
+	ctx := tuictx.New(80, 24)
+	hdr := header.NewModel(ctx, "", "", "compare")
+	ftr := footer.NewModel(ctx, []footer.KeyHint{
+		{Key: "q", Action: "quit"},
+	})
+	return Model{pathA: pathA, pathB: pathB, ctx: ctx, headerComp: hdr, footerComp: ftr}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -54,8 +67,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.ctx.Resize(msg.Width, msg.Height)
+		m.headerComp.UpdateContext(m.ctx)
+		m.footerComp.UpdateContext(m.ctx)
 	}
 	return m, nil
 }
@@ -64,39 +78,44 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+
+	s := m.ctx.Styles
+
 	if m.err != nil {
-		return tui.ErrorStyle.Render("Error: "+m.err.Error()) + "\n"
+		return s.Common.ErrorStyle.Render("Error: "+m.err.Error()) + "\n"
 	}
 	if m.result == nil {
 		return "  Loading...\n"
 	}
 
-	var b strings.Builder
+	// Update header with actual data now available
+	var sections []string
 
 	title := fmt.Sprintf("Compare: %s %s (%s)", m.result.RunA.App, m.result.RunA.Phase, m.result.RunA.Env)
-	b.WriteString("\n")
-	b.WriteString(tui.HeaderStyle.Render(title))
-	b.WriteString("\n")
-	fmt.Fprintf(&b, "  Run A: %s   Run B: %s",
-		tui.DimStyle.Render(m.result.RunA.Start),
-		tui.DimStyle.Render(m.result.RunB.Start))
-	b.WriteString("\n\n")
+	sections = append(sections, "",
+		s.Header.Root.Render(title),
+		fmt.Sprintf("  Run A: %s   Run B: %s",
+			s.Common.FaintTextStyle.Render(m.result.RunA.Start),
+			s.Common.FaintTextStyle.Render(m.result.RunB.Start)),
+		"")
 
-	fmt.Fprintf(&b, "  %-22s %12s %12s %12s\n", "Metric", "Run A", "Run B", "Delta")
-	fmt.Fprintf(&b, "  %-22s %12s %12s %12s\n",
-		strings.Repeat("\u2500", 22),
-		strings.Repeat("\u2500", 12),
-		strings.Repeat("\u2500", 12),
-		strings.Repeat("\u2500", 12))
-
+	// k6 metrics table
+	var k6Rows []table.Row
 	for _, row := range m.result.K6Rows {
 		label, valA, valB := formatK6Row(row)
-		delta := formatDelta(row.Delta, row.Direction)
-		fmt.Fprintf(&b, "  %-22s %12s %12s %s\n", label, valA, valB, delta)
+		delta := m.formatDelta(row.Delta, row.Direction)
+		k6Rows = append(k6Rows, table.Row{label, valA, valB, delta})
 	}
+	k6Tbl := table.NewModel(m.ctx, []table.Column{
+		{Title: "Metric", Width: 22},
+		{Title: "Run A", Width: 12, Align: lipgloss.Right},
+		{Title: "Run B", Width: 12, Align: lipgloss.Right},
+		{Title: "Delta", Width: 14, Align: lipgloss.Right},
+	})
+	k6Tbl.SetRows(k6Rows)
+	sections = append(sections, k6Tbl.View(), "")
 
-	b.WriteString("\n")
-
+	// Infrastructure rows
 	var cpuRow, memRow, alb5xxRow *report.ComparisonRow
 	var tasksBefore, tasksAfter, asgBefore, asgAfter *report.ComparisonRow
 
@@ -120,34 +139,41 @@ func (m Model) View() string {
 		}
 	}
 
+	var infraRows []table.Row
 	if cpuRow != nil && (cpuRow.ValueA != "-" || cpuRow.ValueB != "-") {
-		delta := formatDelta(cpuRow.Delta, cpuRow.Direction)
-		fmt.Fprintf(&b, "  %-22s %11s%% %11s%% %s\n", "ECS CPU peak", cpuRow.ValueA, cpuRow.ValueB, delta)
+		infraRows = append(infraRows, table.Row{"ECS CPU peak", cpuRow.ValueA + "%", cpuRow.ValueB + "%", m.formatDelta(cpuRow.Delta, cpuRow.Direction)})
 	}
 	if memRow != nil && (memRow.ValueA != "-" || memRow.ValueB != "-") {
-		delta := formatDelta(memRow.Delta, memRow.Direction)
-		fmt.Fprintf(&b, "  %-22s %11s%% %11s%% %s\n", "ECS memory peak", memRow.ValueA, memRow.ValueB, delta)
+		infraRows = append(infraRows, table.Row{"ECS memory peak", memRow.ValueA + "%", memRow.ValueB + "%", m.formatDelta(memRow.Delta, memRow.Direction)})
 	}
 	if tasksBefore != nil && tasksAfter != nil {
-		fmt.Fprintf(&b, "  %-22s %8s/%-3s %8s/%-3s\n", "Tasks (before/after)",
-			tasksBefore.ValueA, tasksAfter.ValueA,
-			tasksBefore.ValueB, tasksAfter.ValueB)
+		infraRows = append(infraRows, table.Row{"Tasks (before/after)",
+			tasksBefore.ValueA + "/" + tasksAfter.ValueA,
+			tasksBefore.ValueB + "/" + tasksAfter.ValueB, ""})
 	}
 	if asgBefore != nil && asgAfter != nil {
-		fmt.Fprintf(&b, "  %-22s %8s/%-3s %8s/%-3s\n", "ASG (before/after)",
-			asgBefore.ValueA, asgAfter.ValueA,
-			asgBefore.ValueB, asgAfter.ValueB)
+		infraRows = append(infraRows, table.Row{"ASG (before/after)",
+			asgBefore.ValueA + "/" + asgAfter.ValueA,
+			asgBefore.ValueB + "/" + asgAfter.ValueB, ""})
 	}
 	if alb5xxRow != nil && (alb5xxRow.ValueA != "-" || alb5xxRow.ValueB != "-") {
-		delta := formatDelta(alb5xxRow.Delta, alb5xxRow.Direction)
-		fmt.Fprintf(&b, "  %-22s %12s %12s %s\n", "ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, delta)
+		infraRows = append(infraRows, table.Row{"ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, m.formatDelta(alb5xxRow.Delta, alb5xxRow.Direction)})
 	}
 
-	b.WriteString("\n")
-	b.WriteString(tui.DimStyle.Render("  Press q to quit"))
-	b.WriteString("\n")
+	if len(infraRows) > 0 {
+		infraTbl := table.NewModel(m.ctx, []table.Column{
+			{Title: "Infrastructure", Width: 22},
+			{Title: "Run A", Width: 12, Align: lipgloss.Right},
+			{Title: "Run B", Width: 12, Align: lipgloss.Right},
+			{Title: "Delta", Width: 14, Align: lipgloss.Right},
+		})
+		infraTbl.SetRows(infraRows)
+		sections = append(sections, infraTbl.View())
+	}
 
-	return b.String()
+	sections = append(sections, "", m.footerComp.View())
+
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func formatK6Row(row report.ComparisonRow) (label, valA, valB string) {
@@ -169,32 +195,33 @@ func formatK6Row(row report.ComparisonRow) (label, valA, valB string) {
 	}
 }
 
-func formatDelta(delta, direction string) string {
+func (m Model) formatDelta(delta, direction string) string {
 	if direction == "" {
-		return fmt.Sprintf("%12s", delta)
+		return delta
 	}
 
+	ds := m.ctx.Styles.Delta
 	var arrow string
-	var style func(strs ...string) string
+	var style lipgloss.Style
 
 	switch {
 	case direction == "better" && strings.HasPrefix(delta, "-"):
 		arrow = " \u2193"
-		style = tui.SuccessStyle.Render
+		style = ds.Better
 	case direction == "better" && strings.HasPrefix(delta, "+"):
 		arrow = " \u2191"
-		style = tui.SuccessStyle.Render
+		style = ds.Better
 	case direction == "worse" && strings.HasPrefix(delta, "+"):
 		arrow = " \u2191"
-		style = tui.WarnStyle.Render
+		style = ds.Worse
 	case direction == "worse" && strings.HasPrefix(delta, "-"):
 		arrow = " \u2193"
-		style = tui.WarnStyle.Render
+		style = ds.Worse
 	default:
-		return fmt.Sprintf("%12s", delta)
+		return delta
 	}
 
-	return fmt.Sprintf("%12s %s", delta, style(arrow))
+	return delta + style.Render(arrow)
 }
 
 // RunJSON performs the comparison and prints JSON, bypassing the TUI.
