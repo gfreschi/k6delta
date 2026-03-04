@@ -4,23 +4,33 @@ package panel
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
+const transitionFrames = 3
+const transitionInterval = 50 * time.Millisecond
+
+// TransitionTickMsg signals the panel to advance its border transition animation.
+type TransitionTickMsg struct{}
+
 // Model is the panel Bubble Tea model.
 type Model struct {
-	ctx      *tuictx.ProgramContext
-	title    string
-	width    int
-	height   int
-	content  string
-	focused  bool
-	viewport viewport.Model
-	overflow bool // true when content exceeds panel body height
+	ctx            *tuictx.ProgramContext
+	title          string
+	width          int
+	height         int
+	content        string
+	focused        bool
+	viewport       viewport.Model
+	overflow       bool // true when content exceeds panel body height
+	transitioning  bool
+	transitionTick int // 0 to transitionFrames-1
 }
 
 // NewModel creates a panel with title and dimensions.
@@ -48,9 +58,40 @@ func (m *Model) SetContent(content string) {
 	m.overflow = lines > m.viewport.Height
 }
 
-// SetFocused sets the focus state.
+// SetFocused sets the focus state and triggers a border transition animation.
 func (m *Model) SetFocused(focused bool) {
-	m.focused = focused
+	if m.focused != focused {
+		m.focused = focused
+		m.transitioning = true
+		m.transitionTick = 0
+	}
+}
+
+// TransitionCmd returns a tea.Cmd to start the border transition tick loop.
+// Call this after SetFocused when you want animation. Returns nil if no transition is active.
+func (m *Model) TransitionCmd() tea.Cmd {
+	if !m.transitioning {
+		return nil
+	}
+	return tea.Tick(transitionInterval, func(time.Time) tea.Msg {
+		return TransitionTickMsg{}
+	})
+}
+
+// AdvanceTransition advances the transition animation by one frame.
+// Returns a tea.Cmd for the next tick, or nil when the transition completes.
+func (m *Model) AdvanceTransition() tea.Cmd {
+	if !m.transitioning {
+		return nil
+	}
+	m.transitionTick++
+	if m.transitionTick >= transitionFrames {
+		m.transitioning = false
+		return nil
+	}
+	return tea.Tick(transitionInterval, func(time.Time) tea.Msg {
+		return TransitionTickMsg{}
+	})
 }
 
 // SetDimensions updates panel width and height.
@@ -85,10 +126,7 @@ func (m *Model) ScrollPosition() (current, total int) {
 
 // View renders the panel with border and title.
 func (m Model) View() string {
-	style := m.ctx.Styles.Panel.Root
-	if m.focused {
-		style = m.ctx.Styles.Panel.Focused
-	}
+	style := m.borderStyle()
 
 	titleText := m.title
 	if m.overflow {
@@ -103,6 +141,33 @@ func (m Model) View() string {
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	return style.Width(m.width).Render(inner)
+}
+
+func (m Model) borderStyle() lipgloss.Style {
+	if !m.transitioning {
+		if m.focused {
+			return m.ctx.Styles.Panel.Focused
+		}
+		return m.ctx.Styles.Panel.Root
+	}
+
+	// During transition, interpolate between unfocused and focused styles.
+	// Frame 0: unfocused border, Frame 1: primary border (mid), Frame 2: focused border.
+	progress := float64(m.transitionTick+1) / float64(transitionFrames)
+	if !m.focused {
+		// Reverse: going from focused to unfocused
+		progress = 1.0 - progress
+	}
+
+	switch {
+	case progress < 0.33:
+		return m.ctx.Styles.Panel.Root
+	case progress < 0.66:
+		// Mid-point: use primary border with rounded border (between the two)
+		return m.ctx.Styles.Panel.Border.Border(lipgloss.RoundedBorder())
+	default:
+		return m.ctx.Styles.Panel.Focused
+	}
 }
 
 func bodyHeight(panelHeight int) int {

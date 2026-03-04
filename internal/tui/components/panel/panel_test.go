@@ -15,6 +15,9 @@ func TestPanel_focusedHasDifferentBorder(t *testing.T) {
 
 	unfocused := p.View()
 	p.SetFocused(true)
+	// Complete the transition animation so the final focused style is used.
+	for p.AdvanceTransition() != nil {
+	}
 	focused := p.View()
 
 	if unfocused == focused {

@@ -133,10 +133,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch {
 			case key.Matches(msg, keys.Keys.NextPanel):
 				m.focusMgr.Next()
-				return m, nil
+				return m, m.updateDashboardFocus()
 			case key.Matches(msg, keys.Keys.PrevPanel):
 				m.focusMgr.Prev()
-				return m, nil
+				return m, m.updateDashboardFocus()
 			case key.Matches(msg, keys.Keys.Down):
 				m.scrollFocusedPanel(1)
 				return m, nil
@@ -220,6 +220,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case panel.TransitionTickMsg:
+		if m.focusMgr != nil {
+			cmd := tea.Batch(
+				m.statePanel.AdvanceTransition(),
+				m.metricsPanel.AdvanceTransition(),
+				m.eventsPanel.AdvanceTransition(),
+			)
+			return m, cmd
+		}
 
 	case errMsg:
 		m.err = msg.err
@@ -389,6 +399,17 @@ func (m Model) viewDashboard() string {
 	)
 
 	return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
+}
+
+func (m *Model) updateDashboardFocus() tea.Cmd {
+	m.statePanel.SetFocused(m.focusMgr.IsFocused(0))
+	m.metricsPanel.SetFocused(m.focusMgr.IsFocused(1))
+	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
+	return tea.Batch(
+		m.statePanel.TransitionCmd(),
+		m.metricsPanel.TransitionCmd(),
+		m.eventsPanel.TransitionCmd(),
+	)
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {
