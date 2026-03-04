@@ -24,7 +24,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
-	"github.com/gfreschi/k6delta/internal/tui/components/linechart"
+	"github.com/gfreschi/k6delta/internal/tui/components/streamchart"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
@@ -100,8 +100,8 @@ type Model struct {
 	graphMode          bool
 	k6PointChan        chan k6runner.K6Point
 	k6Cancel           context.CancelFunc
-	rpsChart           linechart.Model
-	latencyChart       linechart.Model
+	rpsChart           streamchart.Model
+	latencyChart       streamchart.Model
 	cpuGauge           gauge.Model
 	memGauge           gauge.Model
 	reservGauge        gauge.Model
@@ -176,8 +176,8 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		spinner:            s,
 		streamingSupported: canStream,
 		graphMode:          true,
-		rpsChart:           linechart.NewModel(ctx, "Throughput", "req/s", 40, 8),
-		latencyChart:       linechart.NewModel(ctx, "Latency", "ms", 40, 8),
+		rpsChart:           streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*55/100, 12),
+		latencyChart:       streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*55/100, 12),
 		cpuGauge:           gauge.NewModel(ctx, "CPU", 30),
 		memGauge:           gauge.NewModel(ctx, "Memory", 30),
 		reservGauge:        gauge.NewModel(ctx, "Reserv", 30),
@@ -242,6 +242,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.footerComp.UpdateContext(m.ctx)
 		m.rpsChart.UpdateContext(m.ctx)
 		m.latencyChart.UpdateContext(m.ctx)
+		chartW := m.ctx.ContentWidth * 55 / 100
+		m.rpsChart.Resize(chartW, 12)
+		m.latencyChart.Resize(chartW, 12)
 		m.cpuGauge.UpdateContext(m.ctx)
 		m.reservGauge.UpdateContext(m.ctx)
 		m.memGauge.UpdateContext(m.ctx)
@@ -1152,18 +1155,19 @@ func (m Model) waitForK6Point() tea.Cmd {
 }
 
 func (m *Model) handleK6Point(point k6runner.K6Point) {
+	pointTime, err := time.Parse(time.RFC3339, point.Time)
+	if err != nil {
+		return
+	}
+
 	switch point.Metric {
 	case "http_req_duration":
-		m.latencyChart.AddPoint(point.Value)
+		m.latencyChart.Push(pointTime, point.Value)
 	case "http_reqs":
-		pointTime, err := time.Parse(time.RFC3339, point.Time)
-		if err != nil {
-			return
-		}
 		second := pointTime.Truncate(time.Second)
 		if second != m.liveRPSTime {
 			if !m.liveRPSTime.IsZero() {
-				m.rpsChart.AddPoint(float64(m.liveRPSCount))
+				m.rpsChart.Push(m.liveRPSTime, float64(m.liveRPSCount))
 			}
 			m.liveRPSCount = 0
 			m.liveRPSTime = second
