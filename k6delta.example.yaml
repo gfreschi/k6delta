@@ -40,3 +40,10 @@ apps:
 #   web:
 #     compose_project: "myapp"
 #     test_file: "tests/${phase}.js"
+
+# For demo/testing (no infrastructure required):
+# provider: mock
+# apps:
+#   web:
+#     mock_scenario: "happy-path"    # happy-path, cpu-spike, scale-out, cascade-failure
+#     test_file: "tests/${phase}.js"
