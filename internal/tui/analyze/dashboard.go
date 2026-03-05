@@ -19,18 +19,18 @@ import (
 
 func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight / 2
+	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 30, 70)
 
-	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, panelH)
+	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, topH)
 	m.statePanel.SetContent(m.renderStateContent())
 
 	metricsW := w * 55 / 100
 	eventsW := w - metricsW
 
-	m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, panelH)
+	m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, bottomH)
 	m.metricsPanel.SetContent(m.renderMetricsContent())
 
-	m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, panelH)
+	m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, bottomH)
 	m.eventsPanel.SetContent(m.renderActivitiesContent())
 
 	m.focusMgr = focus.New(3)
@@ -38,31 +38,47 @@ func (m *Model) initDashboard() {
 
 	m.footerComp.SetHints([]footer.KeyHint{
 		{Key: "q", Action: "quit"},
-		{Key: "tab", Action: "next panel"},
-		{Key: "\u2191\u2193", Action: "scroll"},
-		{Key: "e", Action: "export JSON"},
+		{Key: "tab", Action: "panel"},
+		{Key: "1-3", Action: "jump"},
+		{Key: "+", Action: "expand"},
+		{Key: "↑↓", Action: "scroll"},
+		{Key: "e", Action: "export"},
+		{Key: "?", Action: "help"},
 	})
 }
 
 func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight / 2
-	m.statePanel.SetDimensions(w, panelH)
+	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 30, 70)
+	m.statePanel.SetDimensions(w, topH)
 
 	if w >= constants.BreakpointSplit {
 		metricsW := w * 55 / 100
 		eventsW := w - metricsW
-		m.metricsPanel.SetDimensions(metricsW, panelH)
-		m.eventsPanel.SetDimensions(eventsW, panelH)
+		m.metricsPanel.SetDimensions(metricsW, bottomH)
+		m.eventsPanel.SetDimensions(eventsW, bottomH)
 	} else {
-		m.metricsPanel.SetDimensions(w, panelH)
-		m.eventsPanel.SetDimensions(w, panelH)
+		m.metricsPanel.SetDimensions(w, bottomH)
+		m.eventsPanel.SetDimensions(w, bottomH)
 	}
+}
+
+// calcPanelHeights splits total height into two portions by percentage.
+func calcPanelHeights(totalHeight, topPct, _ int) (int, int) {
+	topH := max(totalHeight*topPct/100, 4)
+	bottomH := max(totalHeight-topH, 4)
+	return topH, bottomH
 }
 
 func (m Model) viewDashboard() string {
 	width := m.ctx.ContentWidth
-	stateView := m.statePanel.View()
+	focused := m.focusMgr.Current()
+	panels := [3]panel.Model{m.statePanel, m.metricsPanel, m.eventsPanel}
+
+	// Full expand: only the focused panel renders
+	if panels[focused].ExpandMode() == constants.ExpandFull {
+		return panels[focused].View()
+	}
 
 	switch {
 	case width >= constants.BreakpointSplit:
@@ -70,10 +86,10 @@ func (m Model) viewDashboard() string {
 			m.metricsPanel.View(),
 			m.eventsPanel.View(),
 		)
-		return lipgloss.JoinVertical(lipgloss.Left, stateView, middle)
+		return lipgloss.JoinVertical(lipgloss.Left, m.statePanel.View(), middle)
 	case width >= constants.BreakpointStacked:
 		return lipgloss.JoinVertical(lipgloss.Left,
-			stateView, m.metricsPanel.View(), m.eventsPanel.View())
+			m.statePanel.View(), m.metricsPanel.View(), m.eventsPanel.View())
 	default:
 		return m.renderRawDisplay()
 	}
@@ -88,6 +104,26 @@ func (m *Model) updateDashboardFocus() tea.Cmd {
 		m.metricsPanel.TransitionCmd(),
 		m.eventsPanel.TransitionCmd(),
 	)
+}
+
+func (m *Model) cycleExpandFocusedPanel() {
+	panels := []*panel.Model{&m.statePanel, &m.metricsPanel, &m.eventsPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].CycleExpand()
+	}
+}
+
+func (m Model) anyPanelExpanded() bool {
+	return m.statePanel.ExpandMode() != constants.ExpandNormal ||
+		m.metricsPanel.ExpandMode() != constants.ExpandNormal ||
+		m.eventsPanel.ExpandMode() != constants.ExpandNormal
+}
+
+func (m *Model) resetAllPanelExpand() {
+	m.statePanel.ResetExpand()
+	m.metricsPanel.ResetExpand()
+	m.eventsPanel.ResetExpand()
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {
@@ -205,6 +241,54 @@ func (m Model) renderRawDisplay() string {
 	sections = append(sections, m.renderActivitiesContent())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m Model) renderHelpOverlay() string {
+	s := m.ctx.Styles
+	w := m.ctx.ContentWidth
+	h := m.ctx.ContentHeight
+
+	groups := []struct {
+		title string
+		keys  [][2]string
+	}{
+		{"Navigation", [][2]string{
+			{"q", "Quit"},
+			{"?", "Toggle help"},
+			{"esc", "Close help / collapse panel"},
+		}},
+		{"Panels", [][2]string{
+			{"tab / shift+tab", "Next / previous panel"},
+			{"1-3", "Jump to panel"},
+			{"+", "Cycle expand (normal → expanded → full)"},
+			{"↑↓ / j k", "Scroll focused panel"},
+		}},
+		{"Actions", [][2]string{
+			{"e", "Export JSON report"},
+		}},
+	}
+
+	var lines []string
+	lines = append(lines, s.Header.Root.Render("Keyboard Shortcuts"), "")
+	for _, g := range groups {
+		lines = append(lines, s.Common.BoldStyle.Render("  "+g.title))
+		for _, kv := range g.keys {
+			lines = append(lines, fmt.Sprintf("    %-22s %s", s.Footer.Key.Render(kv[0]), kv[1]))
+		}
+		lines = append(lines, "")
+	}
+	lines = append(lines, s.Common.FaintTextStyle.Render("  Press ? or esc to close"))
+
+	content := strings.Join(lines, "\n")
+	overlay := lipgloss.NewStyle().
+		Width(min(w-4, 60)).
+		Height(min(h-2, len(lines)+2)).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.Panel.Focused.GetBorderTopForeground()).
+		Padding(1, 2).
+		Render(content)
+
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, overlay)
 }
 
 // --- JSON output ---

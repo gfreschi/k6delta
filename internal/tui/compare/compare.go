@@ -36,6 +36,9 @@ type Model struct {
 	exportStatus string
 	err          error
 	quitting     bool
+
+	// Help overlay
+	showHelp bool
 }
 
 // NewModel creates a new compare TUI model for the two given report paths.
@@ -76,6 +79,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case tea.KeyMsg:
+		if key.Matches(msg, keys.Keys.Help) {
+			m.showHelp = !m.showHelp
+			return m, nil
+		}
+		if m.showHelp {
+			if key.Matches(msg, keys.Keys.Escape) {
+				m.showHelp = false
+				return m, nil
+			}
+			return m, nil
+		}
 		switch {
 		case key.Matches(msg, keys.Keys.Quit):
 			m.quitting = true
@@ -101,6 +115,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Up):
 			m.scrollFocusedPanel(-1)
 			return m, nil
+		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Jump1):
+			m.focusMgr.SetFocus(0)
+			return m, m.updatePanelFocus()
+		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Jump2):
+			m.focusMgr.SetFocus(1)
+			return m, m.updatePanelFocus()
+		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Expand):
+			m.cycleExpandFocusedPanel()
+			return m, nil
+		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Escape):
+			if m.anyPanelExpanded() {
+				m.resetAllPanelExpand()
+				return m, nil
+			}
 		}
 	case tea.WindowSizeMsg:
 		m.ctx.Resize(msg.Width, msg.Height)
@@ -118,6 +146,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.showHelp {
+		return m.renderHelpOverlay()
 	}
 
 	s := m.ctx.Styles
@@ -142,12 +174,19 @@ func (m Model) View() string {
 
 	// Panels (responsive: panels at >=80, fallback text at <80)
 	width := m.ctx.ContentWidth
-	if m.focusMgr != nil && width >= constants.BreakpointStacked {
-		sections = append(sections, m.k6Panel.View())
-		sections = append(sections, m.infraPanel.View())
-	} else if m.focusMgr != nil {
-		// Compact fallback: render table content without panel borders
-		sections = append(sections, m.renderK6Table(), "", m.renderInfraTable())
+	if m.focusMgr != nil {
+		focused := m.focusMgr.Current()
+		panels := [2]panel.Model{m.k6Panel, m.infraPanel}
+
+		if panels[focused].ExpandMode() == constants.ExpandFull {
+			sections = append(sections, panels[focused].View())
+		} else if width >= constants.BreakpointStacked {
+			sections = append(sections, m.k6Panel.View())
+			sections = append(sections, m.infraPanel.View())
+		} else {
+			// Compact fallback: render table content without panel borders
+			sections = append(sections, m.renderK6Table(), "", m.renderInfraTable())
+		}
 	}
 
 	// Summary + footer
@@ -176,11 +215,14 @@ func (m *Model) initDashboard() {
 	m.k6Panel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
-		{Key: "tab", Action: "next panel"},
+		{Key: "q", Action: "quit"},
+		{Key: "tab", Action: "panel"},
+		{Key: "1-2", Action: "jump"},
+		{Key: "+", Action: "expand"},
 		{Key: "↑↓", Action: "scroll"},
 		{Key: "s", Action: "sort"},
 		{Key: "e", Action: "export"},
-		{Key: "q", Action: "quit"},
+		{Key: "?", Action: "help"},
 	})
 }
 
@@ -205,6 +247,24 @@ func (m *Model) updatePanelFocus() tea.Cmd {
 	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
 	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
 	return tea.Batch(m.k6Panel.TransitionCmd(), m.infraPanel.TransitionCmd())
+}
+
+func (m *Model) cycleExpandFocusedPanel() {
+	panels := []*panel.Model{&m.k6Panel, &m.infraPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].CycleExpand()
+	}
+}
+
+func (m Model) anyPanelExpanded() bool {
+	return m.k6Panel.ExpandMode() != constants.ExpandNormal ||
+		m.infraPanel.ExpandMode() != constants.ExpandNormal
+}
+
+func (m *Model) resetAllPanelExpand() {
+	m.k6Panel.ResetExpand()
+	m.infraPanel.ResetExpand()
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {

@@ -221,6 +221,55 @@ func (m Model) formatDelta(delta, direction, metric string) string {
 	return style.Render(delta + arrow + dirWord)
 }
 
+func (m Model) renderHelpOverlay() string {
+	s := m.ctx.Styles
+	w := m.ctx.ContentWidth
+	h := m.ctx.ContentHeight
+
+	groups := []struct {
+		title string
+		keys  [][2]string
+	}{
+		{"Navigation", [][2]string{
+			{"q", "Quit"},
+			{"?", "Toggle help"},
+			{"esc", "Close help / collapse panel"},
+		}},
+		{"Panels", [][2]string{
+			{"tab / shift+tab", "Next / previous panel"},
+			{"1-2", "Jump to panel"},
+			{"+", "Cycle expand (normal → expanded → full)"},
+			{"↑↓ / j k", "Scroll focused panel"},
+		}},
+		{"Actions", [][2]string{
+			{"s", "Cycle sort (default → worst → best)"},
+			{"e", "Export comparison JSON"},
+		}},
+	}
+
+	var lines []string
+	lines = append(lines, s.Header.Root.Render("Keyboard Shortcuts"), "")
+	for _, g := range groups {
+		lines = append(lines, s.Common.BoldStyle.Render("  "+g.title))
+		for _, kv := range g.keys {
+			lines = append(lines, fmt.Sprintf("    %-22s %s", s.Footer.Key.Render(kv[0]), kv[1]))
+		}
+		lines = append(lines, "")
+	}
+	lines = append(lines, s.Common.FaintTextStyle.Render("  Press ? or esc to close"))
+
+	content := strings.Join(lines, "\n")
+	overlay := lipgloss.NewStyle().
+		Width(min(w-4, 60)).
+		Height(min(h-2, len(lines)+2)).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.Panel.Focused.GetBorderTopForeground()).
+		Padding(1, 2).
+		Render(content)
+
+	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, overlay)
+}
+
 // --- Summary ---
 
 type comparisonSummary struct {

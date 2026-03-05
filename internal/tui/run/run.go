@@ -132,6 +132,9 @@ type Model struct {
 	demoMode     bool
 	demoSpeed    float64
 	demoScenario string
+
+	// Help overlay
+	showHelp bool
 }
 
 // NewModel creates a new run Model.
@@ -212,8 +215,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.liveMode {
-			switch msg.String() {
-			case "tab":
+			switch {
+			case key.Matches(msg, keys.Keys.NextPanel):
 				if m.liveFocusMgr != nil {
 					m.liveFocusMgr.Next()
 					m.liveGraphPanel.SetFocused(m.liveFocusMgr.IsFocused(0))
@@ -224,7 +227,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					)
 				}
 				return m, nil
-			case "shift+tab":
+			case key.Matches(msg, keys.Keys.PrevPanel):
 				if m.liveFocusMgr != nil {
 					m.liveFocusMgr.Prev()
 					m.liveGraphPanel.SetFocused(m.liveFocusMgr.IsFocused(0))
@@ -235,15 +238,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					)
 				}
 				return m, nil
-			case "g":
+			case key.Matches(msg, keys.LiveKeys.ToggleGraphs):
 				m.graphMode = !m.graphMode
 				return m, nil
-			case "a":
+			case key.Matches(msg, keys.LiveKeys.Abort):
 				if m.k6Cancel != nil {
 					m.k6Cancel()
 				}
 				return m, nil
 			}
+		}
+		// Help overlay toggle (available in any phase)
+		if key.Matches(msg, keys.Keys.Help) {
+			m.showHelp = !m.showHelp
+			return m, nil
+		}
+		if m.showHelp {
+			if key.Matches(msg, keys.Keys.Escape) {
+				m.showHelp = false
+				return m, nil
+			}
+			return m, nil
 		}
 		if m.currentPhase == phaseDone {
 			switch {
@@ -259,6 +274,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Keys.Up):
 				m.scrollFocusedPanel(-1)
 				return m, nil
+			case key.Matches(msg, keys.Keys.Jump1):
+				m.focusMgr.SetFocus(0)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Jump2):
+				m.focusMgr.SetFocus(1)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Jump3):
+				m.focusMgr.SetFocus(2)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Jump4):
+				m.focusMgr.SetFocus(3)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Expand):
+				m.cycleExpandFocusedPanel()
+				return m, nil
+			case key.Matches(msg, keys.Keys.Escape):
+				if m.anyPanelExpanded() {
+					m.resetAllPanelExpand()
+					return m, nil
+				}
 			case key.Matches(msg, keys.RunKeys.Export):
 				return m, m.exportReport()
 			case key.Matches(msg, keys.RunKeys.OpenHTML):
@@ -268,8 +303,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		switch msg.String() {
-		case "q", "ctrl+c":
+		if key.Matches(msg, keys.Keys.Quit) {
 			if m.k6Cancel != nil {
 				m.k6Cancel()
 			}
@@ -485,11 +519,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case exportDoneMsg:
 		m.footerComp.SetHints([]footer.KeyHint{
 			{Key: "q", Action: "quit"},
-			{Key: "tab", Action: "next panel"},
-			{Key: "\u2191\u2193", Action: "scroll"},
-			{Key: "e", Action: "export JSON"},
-			{Key: "o", Action: "open HTML"},
-			{Key: "r", Action: "raw view"},
+			{Key: "tab", Action: "panel"},
+			{Key: "1-4", Action: "jump"},
+			{Key: "+", Action: "expand"},
+			{Key: "↑↓", Action: "scroll"},
+			{Key: "e", Action: "export"},
+			{Key: "o", Action: "open"},
+			{Key: "r", Action: "raw"},
+			{Key: "?", Action: "help"},
 		})
 		return m, nil
 
@@ -534,6 +571,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.showHelp {
+		return m.renderHelpOverlay()
 	}
 
 	if m.liveMode {

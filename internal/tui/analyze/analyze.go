@@ -72,6 +72,9 @@ type Model struct {
 	statePanel   panel.Model
 	metricsPanel panel.Model
 	eventsPanel  panel.Model
+
+	// Help overlay
+	showHelp bool
 }
 
 // NewModel creates a new analyze TUI model.
@@ -112,6 +115,17 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		if key.Matches(msg, keys.Keys.Help) {
+			m.showHelp = !m.showHelp
+			return m, nil
+		}
+		if m.showHelp {
+			if key.Matches(msg, keys.Keys.Escape) {
+				m.showHelp = false
+				return m, nil
+			}
+			return m, nil
+		}
 		if m.phase == phaseDisplay {
 			switch {
 			case key.Matches(msg, keys.Keys.NextPanel):
@@ -126,6 +140,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Keys.Up):
 				m.scrollFocusedPanel(-1)
 				return m, nil
+			case key.Matches(msg, keys.Keys.Jump1):
+				m.focusMgr.SetFocus(0)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Jump2):
+				m.focusMgr.SetFocus(1)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Jump3):
+				m.focusMgr.SetFocus(2)
+				return m, m.updateDashboardFocus()
+			case key.Matches(msg, keys.Keys.Expand):
+				m.cycleExpandFocusedPanel()
+				return m, nil
+			case key.Matches(msg, keys.Keys.Escape):
+				if m.anyPanelExpanded() {
+					m.resetAllPanelExpand()
+					return m, nil
+				}
 			case key.Matches(msg, keys.AnalyzeKeys.Export):
 				if m.outputFile != "" {
 					if err := m.writeOutputFile(); err != nil {
@@ -135,8 +166,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		switch msg.String() {
-		case "q", "ctrl+c":
+		if key.Matches(msg, keys.Keys.Quit) {
 			m.quitting = true
 			return m, tea.Quit
 		}
@@ -294,6 +324,10 @@ func (m Model) fetchActivities() tea.Cmd {
 func (m Model) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.showHelp {
+		return m.renderHelpOverlay()
 	}
 
 	s := m.ctx.Styles

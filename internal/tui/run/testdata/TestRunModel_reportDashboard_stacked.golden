@@ -1,40 +1,40 @@
-k6delta: test-app (staging) -- smoke                                            
-                                                                                
-  ◯ AWS credentials                                                             
-  ◯ Pre-snapshot                                                                
-  ◯ Running k6                                                                  
-  ◯ Post-snapshot                                                               
-  ◯ Analysis                                                                    
-  ◯ Report                                                                      
-                                                                                
-Load Test Report                                                                
-                                                                                
-  Duration                  10:00:00 -> 10:01:00  (1m 0s)                       
-  k6 exit                   0 (all thresholds passed)                           
-                                                                                
-Metric                     Value                                                
-───────────────────────────────────────────────────                             
-p95 latency                150.0ms                                              
-Error rate                 0.50%                                                
-Throughput                 83.3/s                                               
-Checks                     99.8%                                                
-Thresholds                 3 passed, 0 failed                                   
-                                                                                
-Infrastructure             Before       After        Delta                      
-───────────────────────────────────────────────────────────────                 
-ECS tasks                  4            4              -                        
-EC2 instances              2            2              -                        
-                                                                                
-CloudWatch Peaks           Peak         Avg                                     
-────────────────────────────────────────────────────                            
-ECS CPU                           55.0%        43.6%                            
-ECS Memory                       530.0%       521.0%                            
-                                                                                
-  Verdict: PASS                                                                 
-  ✓ All k6 thresholds passed                                                    
-  ✓ Zero 5xx errors                                                             
-                                                                                
-  Output Files                                                                  
-                                                                                
-                                                                                
-  q quit · tab next panel · ↑↓ scroll · e export JSON · o open HTML · r raw view
+k6delta: test-app (staging) -- smoke                                                       
+                                                                                           
+  ◯ AWS credentials                                                                        
+  ◯ Pre-snapshot                                                                           
+  ◯ Running k6                                                                             
+  ◯ Post-snapshot                                                                          
+  ◯ Analysis                                                                               
+  ◯ Report                                                                                 
+                                                                                           
+Load Test Report                                                                           
+                                                                                           
+  Duration                  10:00:00 -> 10:01:00  (1m 0s)                                  
+  k6 exit                   0 (all thresholds passed)                                      
+                                                                                           
+Metric                     Value                                                           
+───────────────────────────────────────────────────                                        
+p95 latency                150.0ms                                                         
+Error rate                 0.50%                                                           
+Throughput                 83.3/s                                                          
+Checks                     99.8%                                                           
+Thresholds                 3 passed, 0 failed                                              
+                                                                                           
+Infrastructure             Before       After        Delta                                 
+───────────────────────────────────────────────────────────────                            
+ECS tasks                  4            4              -                                   
+EC2 instances              2            2              -                                   
+                                                                                           
+CloudWatch Peaks           Peak         Avg                                                
+────────────────────────────────────────────────────                                       
+ECS CPU                           55.0%        43.6%                                       
+ECS Memory                       530.0%       521.0%                                       
+                                                                                           
+  Verdict: PASS                                                                            
+  ✓ All k6 thresholds passed                                                               
+  ✓ Zero 5xx errors                                                                        
+                                                                                           
+  Output Files                                                                             
+                                                                                           
+                                                                                           
+  q quit · tab panel · 1-4 jump · + expand · ↑↓ scroll · e export · o open · r raw · ? help

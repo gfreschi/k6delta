@@ -150,27 +150,27 @@ func (m Model) renderReport() string {
 
 func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight / 2
+	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 55, 45)
 
 	halfW := w / 2
 
 	// Top row: k6 (left) + graphs (right)
-	m.k6Panel = panel.NewModel(m.ctx, "k6 Summary [1]", halfW, panelH)
+	m.k6Panel = panel.NewModel(m.ctx, "k6 Summary [1]", halfW, topH)
 	m.k6Panel.SetContent(m.renderK6SummaryGrid())
 
-	m.graphsPanel = panel.NewModel(m.ctx, "Graphs [2]", w-halfW, panelH)
-	m.reportRPSChart = timechart.NewModel(m.ctx, "Throughput", "req/s", w-halfW-4, panelH/2-2)
-	m.reportLatencyChart = timechart.NewModel(m.ctx, "Latency", "ms", w-halfW-4, panelH/2-2)
+	m.graphsPanel = panel.NewModel(m.ctx, "Graphs [2]", w-halfW, topH)
+	m.reportRPSChart = timechart.NewModel(m.ctx, "Throughput", "req/s", w-halfW-4, topH/2-2)
+	m.reportLatencyChart = timechart.NewModel(m.ctx, "Latency", "ms", w-halfW-4, topH/2-2)
 	m.populateReportCharts()
 	m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 
 	// Bottom row: infra (left) + events (right)
 	infraW := w * 55 / 100
 	eventsW := w - infraW
-	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [3]", infraW, panelH)
+	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [3]", infraW, bottomH)
 	m.infraPanel.SetContent(m.renderInfraTable())
 
-	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, panelH)
+	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, bottomH)
 	m.eventsPanel.SetContent(m.renderEventsList())
 
 	m.focusMgr = focus.New(4)
@@ -178,41 +178,52 @@ func (m *Model) initDashboard() {
 
 	m.footerComp.SetHints([]footer.KeyHint{
 		{Key: "q", Action: "quit"},
-		{Key: "tab", Action: "next panel"},
-		{Key: "\u2191\u2193", Action: "scroll"},
-		{Key: "e", Action: "export JSON"},
-		{Key: "o", Action: "open HTML"},
-		{Key: "r", Action: "raw view"},
+		{Key: "tab", Action: "panel"},
+		{Key: "1-4", Action: "jump"},
+		{Key: "+", Action: "expand"},
+		{Key: "↑↓", Action: "scroll"},
+		{Key: "e", Action: "export"},
+		{Key: "o", Action: "open"},
+		{Key: "r", Action: "raw"},
+		{Key: "?", Action: "help"},
 	})
 }
 
 func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight / 2
+	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 55, 45)
 
 	if w >= constants.BreakpointSplit {
 		halfW := w / 2
-		m.k6Panel.SetDimensions(halfW, panelH)
-		m.graphsPanel.SetDimensions(w-halfW, panelH)
+		m.k6Panel.SetDimensions(halfW, topH)
+		m.graphsPanel.SetDimensions(w-halfW, topH)
 
 		infraW := w * 55 / 100
 		eventsW := w - infraW
-		m.infraPanel.SetDimensions(infraW, panelH)
-		m.eventsPanel.SetDimensions(eventsW, panelH)
+		m.infraPanel.SetDimensions(infraW, bottomH)
+		m.eventsPanel.SetDimensions(eventsW, bottomH)
 
-		m.reportRPSChart.Resize(w-halfW-4, panelH/2-2)
-		m.reportLatencyChart.Resize(w-halfW-4, panelH/2-2)
+		m.reportRPSChart.Resize(w-halfW-4, topH/2-2)
+		m.reportLatencyChart.Resize(w-halfW-4, topH/2-2)
 		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 	} else {
-		m.k6Panel.SetDimensions(w, panelH)
-		m.graphsPanel.SetDimensions(w, panelH)
-		m.infraPanel.SetDimensions(w, panelH)
-		m.eventsPanel.SetDimensions(w, panelH)
+		m.k6Panel.SetDimensions(w, topH)
+		m.graphsPanel.SetDimensions(w, topH)
+		m.infraPanel.SetDimensions(w, bottomH)
+		m.eventsPanel.SetDimensions(w, bottomH)
 
-		m.reportRPSChart.Resize(w-4, panelH/2-2)
-		m.reportLatencyChart.Resize(w-4, panelH/2-2)
+		m.reportRPSChart.Resize(w-4, topH/2-2)
+		m.reportLatencyChart.Resize(w-4, topH/2-2)
 		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 	}
+}
+
+// calcPanelHeights splits total height into two portions by percentage.
+func calcPanelHeights(totalHeight, topPct, bottomPct int) (int, int) {
+	topH := max(totalHeight*topPct/100, 4)
+	bottomH := max(totalHeight-topH, 4)
+	_ = bottomPct // used implicitly: bottom gets the remainder
+	return topH, bottomH
 }
 
 func (m Model) viewReportDashboard() string {
@@ -222,6 +233,14 @@ func (m Model) viewReportDashboard() string {
 
 	width := m.ctx.ContentWidth
 	verdict := m.renderVerdictBar()
+
+	focused := m.focusMgr.Current()
+	panels := [4]panel.Model{m.k6Panel, m.graphsPanel, m.infraPanel, m.eventsPanel}
+
+	// Full expand: only the focused panel renders
+	if panels[focused].ExpandMode() == constants.ExpandFull {
+		return lipgloss.JoinVertical(lipgloss.Left, panels[focused].View(), verdict)
+	}
 
 	switch {
 	case width >= constants.BreakpointSplit:
@@ -258,6 +277,28 @@ func (m *Model) updateDashboardFocus() tea.Cmd {
 		m.infraPanel.TransitionCmd(),
 		m.eventsPanel.TransitionCmd(),
 	)
+}
+
+func (m *Model) cycleExpandFocusedPanel() {
+	panels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].CycleExpand()
+	}
+}
+
+func (m Model) anyPanelExpanded() bool {
+	return m.k6Panel.ExpandMode() != constants.ExpandNormal ||
+		m.graphsPanel.ExpandMode() != constants.ExpandNormal ||
+		m.infraPanel.ExpandMode() != constants.ExpandNormal ||
+		m.eventsPanel.ExpandMode() != constants.ExpandNormal
+}
+
+func (m *Model) resetAllPanelExpand() {
+	m.k6Panel.ResetExpand()
+	m.graphsPanel.ResetExpand()
+	m.infraPanel.ResetExpand()
+	m.eventsPanel.ResetExpand()
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {
