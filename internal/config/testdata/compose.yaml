@@ -1,0 +1,14 @@
+provider: docker-compose
+region: local
+
+defaults:
+  env: local
+  phase: smoke
+  results_dir: results
+
+apps:
+  web:
+    compose_project: "myapp"
+    test_file: "tests/${phase}.js"
+    cluster: ""
+    service: ""

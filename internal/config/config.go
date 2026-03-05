@@ -75,6 +75,7 @@ type AppConfig struct {
 	CapacityProvider string `yaml:"capacity_provider"`
 	TestFile         string `yaml:"test_file"`
 	AlarmPrefix      string `yaml:"alarm_prefix"`
+	ComposeProject   string `yaml:"compose_project"`
 }
 
 // ResolvedApp is an AppConfig with all ${var} interpolations applied.
@@ -86,6 +87,7 @@ type ResolvedApp struct {
 	CapacityProvider string
 	TestFile         string
 	AlarmPrefix      string
+	ComposeProject   string
 	Env              string
 	Phase            string
 	Region           string
@@ -149,6 +151,7 @@ func Interpolate(app AppConfig, name, env, phase, region, resultsDir string) Res
 		CapacityProvider: r.Replace(app.CapacityProvider),
 		TestFile:         r.Replace(app.TestFile),
 		AlarmPrefix:      r.Replace(app.AlarmPrefix),
+		ComposeProject:   r.Replace(app.ComposeProject),
 		Env:              env,
 		Phase:            phase,
 		Region:           region,

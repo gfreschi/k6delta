@@ -172,6 +172,31 @@ func TestValidatePhase(t *testing.T) {
 	}
 }
 
+func TestLoadComposeConfig(t *testing.T) {
+	cfg, err := Load(filepath.Join("testdata", "compose.yaml"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Provider != "docker-compose" {
+		t.Errorf("Provider = %q, want %q", cfg.Provider, "docker-compose")
+	}
+	app := cfg.Apps["web"]
+	if app.ComposeProject != "myapp" {
+		t.Errorf("ComposeProject = %q, want %q", app.ComposeProject, "myapp")
+	}
+}
+
+func TestInterpolateComposeProject(t *testing.T) {
+	app := AppConfig{
+		ComposeProject: "myapp-${env}",
+		TestFile:       "tests/${phase}.js",
+	}
+	resolved := Interpolate(app, "web", "staging", "smoke", "local", "results")
+	if resolved.ComposeProject != "myapp-staging" {
+		t.Errorf("ComposeProject = %q, want %q", resolved.ComposeProject, "myapp-staging")
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.Provider != "ecs" {
