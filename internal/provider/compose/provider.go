@@ -66,5 +66,5 @@ func (p *Provider) FetchMetrics(ctx context.Context, start, end time.Time, perio
 
 // FetchActivities captures container start/stop/restart events.
 func (p *Provider) FetchActivities(ctx context.Context, start, end time.Time) (provider.Activities, error) {
-	return provider.Activities{}, fmt.Errorf("not implemented")
+	return p.fetchActivitiesWithClient(ctx, p.docker, start, end)
 }

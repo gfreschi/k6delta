@@ -33,3 +33,10 @@ apps:
     service: "myapp-worker-${env}"
     test_file: "tests/performance/worker/${phase}.js"
     # No asg_prefix, capacity_provider, or alarm_prefix -- k6delta skips those metrics
+
+# For Docker Compose (local development):
+# provider: docker-compose
+# apps:
+#   web:
+#     compose_project: "myapp"
+#     test_file: "tests/${phase}.js"

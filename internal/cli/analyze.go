@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/gfreschi/k6delta/internal/provider/ecs"
 	analyzetui "github.com/gfreschi/k6delta/internal/tui/analyze"
 )
 
@@ -48,7 +47,7 @@ func NewAnalyzeCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			prov, err := ecs.New(ctx, resolved)
+			prov, err := createProvider(ctx, cfg, resolved)
 			if err != nil {
 				return err
 			}
@@ -59,9 +58,11 @@ func NewAnalyzeCmd() *cobra.Command {
 
 			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, jsonOutput, outputFile)
 			p := tea.NewProgram(m)
-			prov.SetOnProgress(func(id string, current, total int) {
-				p.Send(analyzetui.ProgressMsg{ID: id, Current: current, Total: total})
-			})
+			if ps, ok := prov.(progressSetter); ok {
+				ps.SetOnProgress(func(id string, current, total int) {
+					p.Send(analyzetui.ProgressMsg{ID: id, Current: current, Total: total})
+				})
+			}
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("TUI error: %w", err)
 			}

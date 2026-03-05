@@ -15,7 +15,6 @@ import (
 	"github.com/gfreschi/k6delta/internal/config"
 	"github.com/gfreschi/k6delta/internal/k6"
 	"github.com/gfreschi/k6delta/internal/provider"
-	"github.com/gfreschi/k6delta/internal/provider/ecs"
 	"github.com/gfreschi/k6delta/internal/report"
 	runtui "github.com/gfreschi/k6delta/internal/tui/run"
 	"github.com/gfreschi/k6delta/internal/verdict"
@@ -58,7 +57,7 @@ func NewRunCmd() *cobra.Command {
 			}
 
 			ctx := context.Background()
-			prov, err := ecs.New(ctx, resolved)
+			prov, err := createProvider(ctx, cfg, resolved)
 			if err != nil {
 				return err
 			}
@@ -69,9 +68,11 @@ func NewRunCmd() *cobra.Command {
 
 			m := runtui.NewModel(resolved, prov, baseURL, skipAnalyze, cfg.Verdicts.WithDefaults())
 			p := tea.NewProgram(m)
-			prov.SetOnProgress(func(id string, current, total int) {
-				p.Send(runtui.ProgressMsg{ID: id, Current: current, Total: total})
-			})
+			if ps, ok := prov.(progressSetter); ok {
+				ps.SetOnProgress(func(id string, current, total int) {
+					p.Send(runtui.ProgressMsg{ID: id, Current: current, Total: total})
+				})
+			}
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("TUI error: %w", err)
 			}
@@ -211,9 +212,9 @@ func buildInfraMetricsCI(metrics []provider.MetricResult) *report.InfraMetrics {
 	for _, m := range metrics {
 		pa := &report.PeakAvg{Peak: m.Peak, Avg: m.Avg}
 		switch m.ID {
-		case "ecs_cpu":
+		case "ecs_cpu", "container_cpu":
 			infra.ECSCPU = pa
-		case "ecs_memory":
+		case "ecs_memory", "container_memory":
 			infra.ECSMemory = pa
 		case "cluster_cpu_reservation":
 			infra.ClusterCPUReservation = pa

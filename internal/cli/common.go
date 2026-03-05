@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/gfreschi/k6delta/internal/config"
+	"github.com/gfreschi/k6delta/internal/provider"
+	"github.com/gfreschi/k6delta/internal/provider/compose"
+	"github.com/gfreschi/k6delta/internal/provider/ecs"
 )
 
 // loadConfig loads config from the given path, or falls back to k6delta.yaml / defaults.
@@ -54,6 +58,27 @@ func resolveApp(cfg *config.Config, appName, env, phase, region string) (config.
 	}
 
 	return config.Interpolate(appCfg, appName, env, phase, region, resultsDir), nil
+}
+
+// createProvider selects the infrastructure provider based on config.
+func createProvider(ctx context.Context, cfg *config.Config, resolved config.ResolvedApp) (provider.InfraProvider, error) {
+	prov := cfg.Provider
+	if prov == "" {
+		prov = "ecs"
+	}
+	switch prov {
+	case "ecs":
+		return ecs.New(ctx, resolved)
+	case "docker-compose":
+		return compose.New(resolved, resolved.ComposeProject)
+	default:
+		return nil, fmt.Errorf("unknown provider: %q (supported: ecs, docker-compose)", prov)
+	}
+}
+
+// progressSetter is optionally implemented by providers that support progress callbacks.
+type progressSetter interface {
+	SetOnProgress(fn func(id string, current, total int))
 }
 
 func availableApps(cfg *config.Config) string {

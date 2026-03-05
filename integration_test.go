@@ -191,6 +191,27 @@ func TestAnalyzeCIModeHelp(t *testing.T) {
 	}
 }
 
+func TestComposeProviderDryRun(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "run",
+		"--app", "web",
+		"--phase", "smoke",
+		"--dry-run",
+		"--config", filepath.Join("internal", "config", "testdata", "compose.yaml"),
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("dry-run failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "k6 run") {
+		t.Errorf("expected k6 command in output, got: %s", output)
+	}
+	if !strings.Contains(output, "tests/smoke.js") {
+		t.Errorf("expected test file path in output, got: %s", output)
+	}
+}
+
 func TestInitRefusesOverwrite(t *testing.T) {
 	bin := buildBinary(t)
 
