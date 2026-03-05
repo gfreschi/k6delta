@@ -460,7 +460,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.liveMode = false
 		m.k6Cancel = nil
-		m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
+		m.footerComp.SetHints([]footer.KeyHint{
 			{Key: "q", Action: "quit"},
 		})
 		m.k6Result = &msg.result

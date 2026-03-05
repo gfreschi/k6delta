@@ -103,31 +103,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sort = (m.sort + 1) % 3
 			m.refreshPanels()
 			return m, nil
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.NextPanel):
-			m.focusMgr.Next()
-			return m, m.updatePanelFocus()
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.PrevPanel):
-			m.focusMgr.Prev()
-			return m, m.updatePanelFocus()
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Down):
-			m.scrollFocusedPanel(1)
-			return m, nil
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Up):
-			m.scrollFocusedPanel(-1)
-			return m, nil
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Jump1):
-			m.focusMgr.SetFocus(0)
-			return m, m.updatePanelFocus()
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Jump2):
-			m.focusMgr.SetFocus(1)
-			return m, m.updatePanelFocus()
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Expand):
-			m.cycleExpandFocusedPanel()
-			return m, nil
-		case m.focusMgr != nil && key.Matches(msg, keys.Keys.Escape):
-			if m.anyPanelExpanded() {
-				m.resetAllPanelExpand()
+		}
+		if m.focusMgr != nil {
+			switch {
+			case key.Matches(msg, keys.Keys.NextPanel):
+				m.focusMgr.Next()
+				return m, m.updatePanelFocus()
+			case key.Matches(msg, keys.Keys.PrevPanel):
+				m.focusMgr.Prev()
+				return m, m.updatePanelFocus()
+			case key.Matches(msg, keys.Keys.Down):
+				m.scrollFocusedPanel(1)
 				return m, nil
+			case key.Matches(msg, keys.Keys.Up):
+				m.scrollFocusedPanel(-1)
+				return m, nil
+			case key.Matches(msg, keys.Keys.Jump1):
+				m.focusMgr.SetFocus(0)
+				return m, m.updatePanelFocus()
+			case key.Matches(msg, keys.Keys.Jump2):
+				m.focusMgr.SetFocus(1)
+				return m, m.updatePanelFocus()
+			case key.Matches(msg, keys.Keys.Expand):
+				m.cycleExpandFocusedPanel()
+				return m, nil
+			case key.Matches(msg, keys.Keys.Escape):
+				if m.anyPanelExpanded() {
+					m.resetAllPanelExpand()
+					return m, nil
+				}
 			}
 		}
 	case tea.WindowSizeMsg:

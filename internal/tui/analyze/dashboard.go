@@ -12,6 +12,7 @@ import (
 
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/overlay"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
@@ -19,7 +20,7 @@ import (
 
 func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
-	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 30, 70)
+	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 30)
 
 	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, topH)
 	m.statePanel.SetContent(m.renderStateContent())
@@ -49,7 +50,7 @@ func (m *Model) initDashboard() {
 
 func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
-	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 30, 70)
+	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 30)
 	m.statePanel.SetDimensions(w, topH)
 
 	if w >= constants.BreakpointSplit {
@@ -61,13 +62,6 @@ func (m *Model) resizeDashboardPanels() {
 		m.metricsPanel.SetDimensions(w, bottomH)
 		m.eventsPanel.SetDimensions(w, bottomH)
 	}
-}
-
-// calcPanelHeights splits total height into two portions by percentage.
-func calcPanelHeights(totalHeight, topPct, _ int) (int, int) {
-	topH := max(totalHeight*topPct/100, 4)
-	bottomH := max(totalHeight-topH, 4)
-	return topH, bottomH
 }
 
 func (m Model) viewDashboard() string {
@@ -244,51 +238,22 @@ func (m Model) renderRawDisplay() string {
 }
 
 func (m Model) renderHelpOverlay() string {
-	s := m.ctx.Styles
-	w := m.ctx.ContentWidth
-	h := m.ctx.ContentHeight
-
-	groups := []struct {
-		title string
-		keys  [][2]string
-	}{
-		{"Navigation", [][2]string{
+	return overlay.RenderHelp(m.ctx, []overlay.HelpGroup{
+		{Title: "Navigation", Keys: [][2]string{
 			{"q", "Quit"},
 			{"?", "Toggle help"},
 			{"esc", "Close help / collapse panel"},
 		}},
-		{"Panels", [][2]string{
+		{Title: "Panels", Keys: [][2]string{
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-3", "Jump to panel"},
 			{"+", "Cycle expand (normal → expanded → full)"},
 			{"↑↓ / j k", "Scroll focused panel"},
 		}},
-		{"Actions", [][2]string{
+		{Title: "Actions", Keys: [][2]string{
 			{"e", "Export JSON report"},
 		}},
-	}
-
-	var lines []string
-	lines = append(lines, s.Header.Root.Render("Keyboard Shortcuts"), "")
-	for _, g := range groups {
-		lines = append(lines, s.Common.BoldStyle.Render("  "+g.title))
-		for _, kv := range g.keys {
-			lines = append(lines, fmt.Sprintf("    %-22s %s", s.Footer.Key.Render(kv[0]), kv[1]))
-		}
-		lines = append(lines, "")
-	}
-	lines = append(lines, s.Common.FaintTextStyle.Render("  Press ? or esc to close"))
-
-	content := strings.Join(lines, "\n")
-	overlay := lipgloss.NewStyle().
-		Width(min(w-4, 60)).
-		Height(min(h-2, len(lines)+2)).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(s.Panel.Focused.GetBorderTopForeground()).
-		Padding(1, 2).
-		Render(content)
-
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, overlay)
+	})
 }
 
 // --- JSON output ---

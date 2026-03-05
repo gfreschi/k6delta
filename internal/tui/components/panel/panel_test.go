@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
@@ -139,23 +140,23 @@ func TestPanel_cycleExpand(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	p := panel.NewModel(ctx, "Test", 40, 10)
 
-	if p.ExpandMode() != 0 {
-		t.Fatalf("initial expand mode = %d, want 0", p.ExpandMode())
+	if p.ExpandMode() != constants.ExpandNormal {
+		t.Fatalf("initial expand mode = %d, want ExpandNormal", p.ExpandMode())
 	}
 
 	p.CycleExpand()
-	if p.ExpandMode() != 1 {
-		t.Fatalf("after 1 cycle = %d, want 1", p.ExpandMode())
+	if p.ExpandMode() != constants.ExpandExpanded {
+		t.Fatalf("after 1 cycle = %d, want ExpandExpanded", p.ExpandMode())
 	}
 
 	p.CycleExpand()
-	if p.ExpandMode() != 2 {
-		t.Fatalf("after 2 cycles = %d, want 2", p.ExpandMode())
+	if p.ExpandMode() != constants.ExpandFull {
+		t.Fatalf("after 2 cycles = %d, want ExpandFull", p.ExpandMode())
 	}
 
 	p.CycleExpand()
-	if p.ExpandMode() != 0 {
-		t.Fatalf("after 3 cycles = %d, want 0 (wrapped)", p.ExpandMode())
+	if p.ExpandMode() != constants.ExpandNormal {
+		t.Fatalf("after 3 cycles = %d, want ExpandNormal (wrapped)", p.ExpandMode())
 	}
 }
 
@@ -166,8 +167,8 @@ func TestPanel_resetExpand(t *testing.T) {
 	p.CycleExpand()
 	p.CycleExpand()
 	p.ResetExpand()
-	if p.ExpandMode() != 0 {
-		t.Fatalf("after reset = %d, want 0", p.ExpandMode())
+	if p.ExpandMode() != constants.ExpandNormal {
+		t.Fatalf("after reset = %d, want ExpandNormal", p.ExpandMode())
 	}
 }
 

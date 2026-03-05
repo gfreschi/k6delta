@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
@@ -30,7 +31,7 @@ type Model struct {
 	content        string
 	child          tea.Model // optional child model whose View() replaces content
 	focused        bool
-	expandMode     int // 0=normal, 1=expanded, 2=full
+	expandMode     int
 	viewport       viewport.Model
 	overflow       bool // true when content exceeds panel body height
 	transitioning  bool
@@ -74,12 +75,12 @@ func (m Model) Focused() bool { return m.focused }
 
 // CycleExpand cycles the expand mode: normal -> expanded -> full -> normal.
 func (m *Model) CycleExpand() {
-	m.expandMode = (m.expandMode + 1) % 3
+	m.expandMode = (m.expandMode + 1) % (constants.ExpandFull + 1)
 }
 
 // ResetExpand resets expand mode to normal.
 func (m *Model) ResetExpand() {
-	m.expandMode = 0
+	m.expandMode = constants.ExpandNormal
 }
 
 // ExpandMode returns the current expand mode.

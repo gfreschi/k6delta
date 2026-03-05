@@ -54,3 +54,12 @@ const (
 	IconArrowUp  = "▲"
 	IconArrowDn  = "▼"
 )
+
+// CalcPanelHeights splits total height into two portions by percentage.
+// The top portion gets topPct% of totalHeight (minimum 4 lines).
+// The bottom portion gets the remainder (minimum 4 lines).
+func CalcPanelHeights(totalHeight, topPct int) (int, int) {
+	topH := max(totalHeight*topPct/100, 4)
+	bottomH := max(totalHeight-topH, 4)
+	return topH, bottomH
+}

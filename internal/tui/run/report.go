@@ -150,7 +150,7 @@ func (m Model) renderReport() string {
 
 func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
-	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 55, 45)
+	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 55)
 
 	halfW := w / 2
 
@@ -191,7 +191,7 @@ func (m *Model) initDashboard() {
 
 func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
-	topH, bottomH := calcPanelHeights(m.ctx.ContentHeight, 55, 45)
+	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 55)
 
 	if w >= constants.BreakpointSplit {
 		halfW := w / 2
@@ -216,14 +216,6 @@ func (m *Model) resizeDashboardPanels() {
 		m.reportLatencyChart.Resize(w-4, topH/2-2)
 		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 	}
-}
-
-// calcPanelHeights splits total height into two portions by percentage.
-func calcPanelHeights(totalHeight, topPct, bottomPct int) (int, int) {
-	topH := max(totalHeight*topPct/100, 4)
-	bottomH := max(totalHeight-topH, 4)
-	_ = bottomPct // used implicitly: bottom gets the remainder
-	return topH, bottomH
 }
 
 func (m Model) viewReportDashboard() string {
