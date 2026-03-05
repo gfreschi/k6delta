@@ -51,17 +51,17 @@ func New(app config.ResolvedApp, project string) (*Provider, error) {
 
 // CheckCredentials verifies Docker is reachable and containers exist for the project.
 func (p *Provider) CheckCredentials(ctx context.Context) error {
-	return fmt.Errorf("not implemented")
+	return p.checkCredentialsWithClient(ctx, p.docker)
 }
 
 // TakeSnapshot captures current container state for the compose project.
 func (p *Provider) TakeSnapshot(ctx context.Context) (provider.Snapshot, error) {
-	return provider.Snapshot{}, fmt.Errorf("not implemented")
+	return p.takeSnapshotWithClient(ctx, p.docker)
 }
 
 // FetchMetrics collects CPU and memory from container stats.
 func (p *Provider) FetchMetrics(ctx context.Context, start, end time.Time, period int32) ([]provider.MetricResult, error) {
-	return nil, fmt.Errorf("not implemented")
+	return p.fetchMetricsWithClient(ctx, p.docker)
 }
 
 // FetchActivities captures container start/stop/restart events.
