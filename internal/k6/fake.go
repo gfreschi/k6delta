@@ -57,9 +57,10 @@ func FakeStream(duration time.Duration, speed float64, scenario string, points c
 
 		// http_req_duration: trend, varies by scenario
 		baseDuration := 120.0
-		if scenario == "cascade-failure" {
+		switch scenario {
+		case "cascade-failure":
 			baseDuration = 120.0 + 3000.0*t*t // exponential rise
-		} else if scenario == "cpu-spike" {
+		case "cpu-spike":
 			baseDuration = 120.0 + 200.0*math.Sin(math.Pi*t)
 		}
 		points <- K6Point{
