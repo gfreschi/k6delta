@@ -12,11 +12,50 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// VerdictConfig holds thresholds for pass/warn/fail verdicts.
+// Zero values mean "use default".
+type VerdictConfig struct {
+	CPUPeakWarn      float64 `yaml:"cpu_peak_warn"`
+	CPUPeakFail      float64 `yaml:"cpu_peak_fail"`
+	Error5xxWarn     int     `yaml:"error_5xx_warn"`
+	Error5xxFail     int     `yaml:"error_5xx_fail"`
+	P95RegWarn       float64 `yaml:"p95_regression_warn"`
+	P95RegFail       float64 `yaml:"p95_regression_fail"`
+	ErrorRateRegWarn float64 `yaml:"error_rate_regression_warn"`
+}
+
+// WithDefaults returns a VerdictConfig with zero values replaced by defaults.
+func (v VerdictConfig) WithDefaults() VerdictConfig {
+	if v.CPUPeakWarn == 0 {
+		v.CPUPeakWarn = 90.0
+	}
+	if v.CPUPeakFail == 0 {
+		v.CPUPeakFail = 98.0
+	}
+	if v.Error5xxWarn == 0 {
+		v.Error5xxWarn = 1
+	}
+	if v.Error5xxFail == 0 {
+		v.Error5xxFail = 10
+	}
+	if v.P95RegWarn == 0 {
+		v.P95RegWarn = 10.0
+	}
+	if v.P95RegFail == 0 {
+		v.P95RegFail = 25.0
+	}
+	if v.ErrorRateRegWarn == 0 {
+		v.ErrorRateRegWarn = 50.0
+	}
+	return v
+}
+
 // Config is the top-level k6delta configuration.
 type Config struct {
-	Provider string              `yaml:"provider"`
-	Region   string              `yaml:"region"`
-	Defaults Defaults            `yaml:"defaults"`
+	Provider string               `yaml:"provider"`
+	Region   string               `yaml:"region"`
+	Defaults Defaults             `yaml:"defaults"`
+	Verdicts VerdictConfig        `yaml:"verdicts"`
 	Apps     map[string]AppConfig `yaml:"apps"`
 }
 
