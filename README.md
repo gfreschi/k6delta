@@ -22,19 +22,21 @@
 Any 5xx during scale-out?"*
 
 k6delta answers these questions automatically. It wraps [k6](https://k6.io/) execution
-with ECS infrastructure snapshots, CloudWatch metrics collection, and
-a unified report - collapsing five manual steps into one command.
+with infrastructure monitoring - capturing snapshots, metrics, and scaling events - then
+produces a unified report. Works with AWS ECS and Docker Compose out of the box.
 
 ## Features
 
 - **One-command load tests:** run k6 with infrastructure monitoring in a single invocation
-- **Pre/post snapshots:** captures ECS task counts and ASG instance counts before and after your test
-- **CloudWatch metrics:** CPU, memory, reservation, ALB request rates, response times, 5xx errors, healthy hosts
-- **Scaling activity tracking:** ASG scaling events and CloudWatch alarm history during the test window
+- **Multiple providers:** AWS ECS (CloudWatch, ASG, ALB) and Docker Compose (container stats, events)
+- **Pre/post snapshots:** captures task/container counts before and after your test
+- **Metrics collection:** CPU, memory, scaling events, and provider-specific metrics
 - **Unified JSON reports:** k6 results + infrastructure metrics in one portable file
 - **Report comparison:** diff two runs with percentage deltas and direction indicators (better/worse)
-- **Standalone analysis:** query CloudWatch metrics for any time window, no k6 required
-- **Interactive TUI:** terminal UI powered by Bubble Tea for results display
+- **Verdict system:** configurable PASS/WARN/FAIL thresholds for CPU, 5xx errors, and regressions
+- **CI mode:** `--ci` flag on all commands - JSON to stdout, exit code 0 (pass/warn) or 1 (fail)
+- **Interactive TUI:** live dashboard with braille charts, panel navigation, and responsive layout
+- **Standalone analysis:** query infrastructure metrics for any time window, no k6 required
 - **Graceful degradation:** optional config fields are silently skipped, not errored
 
 ## Quick Start
@@ -43,13 +45,16 @@ a unified report - collapsing five manual steps into one command.
 # 1. Generate a starter config
 k6delta init
 
-# 2. Edit k6delta.yaml with your cluster/service names
+# 2. Edit k6delta.yaml with your provider and app settings
 
 # 3. Run a load test with infrastructure monitoring
 k6delta run --app web --phase smoke
 
 # 4. Compare two runs
 k6delta compare results/report-baseline.json results/report-latest.json
+
+# 5. Use in CI (JSON to stdout, exit code = verdict)
+k6delta run --app web --phase load --ci
 ```
 
 ## Installation
@@ -83,7 +88,7 @@ make build    # produces ./k6delta
 
 ### `k6delta run`
 
-Executes a k6 test while capturing infrastructure state before and after. Collects CloudWatch metrics and produces a unified JSON report.
+Executes a k6 test while capturing infrastructure state before and after. Collects metrics from your provider and produces a unified JSON report.
 
 ```bash
 k6delta run --app <name> --phase <smoke|load|stress|soak> [flags]
@@ -98,7 +103,7 @@ Output files:
 
 ### `k6delta analyze`
 
-Queries CloudWatch metrics for a time window without running k6.
+Queries infrastructure metrics for a time window without running k6.
 
 ```bash
 k6delta analyze --app <name> --env <env> [flags]
@@ -106,10 +111,10 @@ k6delta analyze --app <name> --env <env> [flags]
 
 ### `k6delta compare`
 
-Compares two unified report JSON files side-by-side with percentage deltas and direction indicators.
+Compares two unified report JSON files side-by-side with percentage deltas and direction indicators. With `--ci`, checks regression thresholds and sets exit code.
 
 ```bash
-k6delta compare <report-a.json> <report-b.json> [--json]
+k6delta compare <report-a.json> <report-b.json> [--json | --ci]
 ```
 
 ### `k6delta init`
@@ -125,13 +130,18 @@ k6delta init
 Create a `k6delta.yaml` - see [k6delta.example.yaml](k6delta.example.yaml) for a full reference.
 
 ```yaml
-provider: ecs
-region: eu-west-1
+provider: docker-compose   # or: ecs
+region: eu-west-1           # AWS region (ECS only)
+
+verdicts:                   # optional verdict thresholds
+  cpu_peak_warn: 90
+  p95_regression_warn: 10
 
 apps:
   web:
-    cluster: "myapp-${env}"
-    service: "myapp-web-${env}"
+    compose_project: "myapp"                          # Docker Compose
+    # cluster: "myapp-${env}"                         # ECS
+    # service: "myapp-web-${env}"                     # ECS
     test_file: "tests/performance/web/${phase}.js"
 ```
 
@@ -142,7 +152,8 @@ Optional fields (`asg_prefix`, `capacity_provider`, `alarm_prefix`) are silently
 
 - **Go 1.25+:** for building from source
 - **[k6](https://k6.io/docs/get-started/installation/):** must be available in your `PATH`
-- **AWS credentials:** configured via any method supported by the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configuring-sdk.html) (environment variables, `~/.aws/credentials`, IAM roles, etc.)
+- **For Docker Compose provider:** Docker Engine running with your compose project up
+- **For ECS provider:** AWS credentials configured via the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configuring-sdk.html)
 
 ## Development
 
