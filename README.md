@@ -23,12 +23,13 @@ Any 5xx during scale-out?"*
 
 k6delta answers these questions automatically. It wraps [k6](https://k6.io/) execution
 with infrastructure monitoring - capturing snapshots, metrics, and scaling events - then
-produces a unified report. Works with AWS ECS and Docker Compose out of the box.
+produces a unified report. Works with AWS ECS, Docker Compose, and a built-in mock provider
+for demos and testing.
 
 ## Features
 
 - **One-command load tests:** run k6 with infrastructure monitoring in a single invocation
-- **Multiple providers:** AWS ECS (CloudWatch, ASG, ALB) and Docker Compose (container stats, events)
+- **Multiple providers:** AWS ECS (CloudWatch, ASG, ALB), Docker Compose (container stats, events), and Mock (synthetic data for demos)
 - **Pre/post snapshots:** captures task/container counts before and after your test
 - **Metrics collection:** CPU, memory, scaling events, and provider-specific metrics
 - **Unified JSON reports:** k6 results + infrastructure metrics in one portable file
@@ -37,11 +38,21 @@ produces a unified report. Works with AWS ECS and Docker Compose out of the box.
 - **CI mode:** `--ci` flag on all commands - JSON to stdout, exit code 0 (pass/warn) or 1 (fail)
 - **Interactive TUI:** live dashboard with braille charts, panel navigation, and responsive layout
 - **Standalone analysis:** query infrastructure metrics for any time window, no k6 required
+- **Demo mode:** try the full TUI experience with `k6delta demo` — no infrastructure or k6 binary needed
 - **Graceful degradation:** optional config fields are silently skipped, not errored
 
 ## Quick Start
 
 ```bash
+# Try it instantly — no config, no infrastructure, no k6 needed
+k6delta demo
+
+# Or with a specific scenario
+k6delta demo --scenario cascade-failure --speed 2
+```
+
+```bash
+# For real infrastructure monitoring:
 # 1. Generate a starter config
 k6delta init
 
@@ -117,6 +128,16 @@ Compares two unified report JSON files side-by-side with percentage deltas and d
 k6delta compare <report-a.json> <report-b.json> [--json | --ci]
 ```
 
+### `k6delta demo`
+
+Runs a simulated load test with synthetic data. No AWS, Docker, or k6 binary needed.
+
+```bash
+k6delta demo [--scenario <name>] [--speed <multiplier>] [--list]
+```
+
+Available scenarios: `happy-path`, `cpu-spike`, `scale-out`, `cascade-failure`.
+
 ### `k6delta init`
 
 Generates a starter `k6delta.yaml` config file.
@@ -130,7 +151,7 @@ k6delta init
 Create a `k6delta.yaml` - see [k6delta.example.yaml](k6delta.example.yaml) for a full reference.
 
 ```yaml
-provider: docker-compose   # or: ecs
+provider: docker-compose   # or: ecs, mock
 region: eu-west-1           # AWS region (ECS only)
 
 verdicts:                   # optional verdict thresholds
@@ -151,15 +172,18 @@ Optional fields (`asg_prefix`, `capacity_provider`, `alarm_prefix`) are silently
 ## Prerequisites
 
 - **Go 1.25+:** for building from source
-- **[k6](https://k6.io/docs/get-started/installation/):** must be available in your `PATH`
+- **[k6](https://k6.io/docs/get-started/installation/):** must be available in your `PATH` (not needed for `k6delta demo`)
 - **For Docker Compose provider:** Docker Engine running with your compose project up
 - **For ECS provider:** AWS credentials configured via the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configuring-sdk.html)
+- **For Mock provider / demo:** no prerequisites — works out of the box
 
 ## Development
 
 ```bash
 make build        # build binary with version injection
 make test         # go test ./... -v
+make test-tui     # TUI package tests only
+make test-update  # regenerate golden files (UPDATE_GOLDEN=1)
 make lint         # go vet ./...
 make clean        # rm -f k6delta
 ```
