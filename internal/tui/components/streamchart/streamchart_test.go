@@ -71,3 +71,56 @@ func TestUpdateContext(t *testing.T) {
 		t.Error("View() should still contain title after UpdateContext")
 	}
 }
+
+func TestAnnotation_viewContainsLabel(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := streamchart.NewModel(ctx, "RPS", "req/s", 60, 12)
+
+	now := time.Now()
+	m.Push(now, 10.0)
+	m.AddAnnotation(streamchart.Annotation{
+		Time:  now.Add(5 * time.Second),
+		Label: "scale 2->3",
+		Style: ctx.Styles.Timeline.Scaling,
+	})
+
+	view := m.View()
+	if !strings.Contains(view, "scale 2->3") {
+		t.Errorf("expected annotation label in view, got: %s", view)
+	}
+	if !strings.Contains(view, "▼") {
+		t.Error("expected annotation marker ▼ in view")
+	}
+}
+
+func TestAnnotation_maxThreeShown(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := streamchart.NewModel(ctx, "RPS", "req/s", 60, 12)
+
+	now := time.Now()
+	m.Push(now, 10.0)
+	for i := 0; i < 5; i++ {
+		m.AddAnnotation(streamchart.Annotation{
+			Time:  now.Add(time.Duration(i) * time.Second),
+			Label: strings.Repeat("x", 1),
+			Style: ctx.Styles.Timeline.Scaling,
+		})
+	}
+
+	view := m.View()
+	// Should contain the marker but only last 3
+	count := strings.Count(view, "▼")
+	if count > 3 {
+		t.Errorf("expected at most 3 annotation markers, got %d", count)
+	}
+}
+
+func TestAnnotation_empty(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := streamchart.NewModel(ctx, "RPS", "req/s", 60, 12)
+
+	view := m.View()
+	if strings.Contains(view, "▼") {
+		t.Error("should not contain annotation marker when no annotations")
+	}
+}

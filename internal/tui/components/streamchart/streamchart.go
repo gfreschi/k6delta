@@ -2,6 +2,7 @@
 package streamchart
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/canvas/runes"
@@ -10,12 +11,24 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
+// maxAnnotations is the maximum number of annotations shown below the chart.
+const maxAnnotations = 3
+
+// Annotation marks a point in time on the chart with a label and style.
+type Annotation struct {
+	Time  time.Time
+	Label string
+	Style lipgloss.Style
+}
+
 // Model wraps a TimeSeriesChart for streaming use.
 type Model struct {
-	ctx   *tuictx.ProgramContext
-	title string
-	unit  string
-	chart tslc.Model
+	ctx         *tuictx.ProgramContext
+	title       string
+	unit        string
+	chart       tslc.Model
+	annotations []Annotation
+	startTime   time.Time
 }
 
 // NewModel creates a streaming chart with braille rendering.
@@ -39,8 +52,16 @@ func NewModel(ctx *tuictx.ProgramContext, title, unit string, width, height int)
 
 // Push adds a timestamped data point and redraws.
 func (m *Model) Push(t time.Time, value float64) {
+	if m.startTime.IsZero() {
+		m.startTime = t
+	}
 	m.chart.Push(tslc.TimePoint{Time: t, Value: value})
 	m.chart.DrawBrailleAll()
+}
+
+// AddAnnotation adds a marker to the chart timeline.
+func (m *Model) AddAnnotation(a Annotation) {
+	m.annotations = append(m.annotations, a)
 }
 
 // Resize updates chart dimensions and redraws.
@@ -56,9 +77,56 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
 }
 
-// View renders the chart with a title header.
+// View renders the chart with a title header and annotation markers.
 func (m Model) View() string {
 	s := m.ctx.Styles
 	header := s.Header.Root.Render("─ " + m.title + " (" + m.unit + ") ")
-	return lipgloss.JoinVertical(lipgloss.Left, header, m.chart.View())
+	parts := []string{header, m.chart.View()}
+
+	if ann := m.renderAnnotations(); ann != "" {
+		parts = append(parts, ann)
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// renderAnnotations renders the last maxAnnotations as inline markers.
+func (m Model) renderAnnotations() string {
+	if len(m.annotations) == 0 {
+		return ""
+	}
+
+	// Show only the last maxAnnotations
+	start := 0
+	if len(m.annotations) > maxAnnotations {
+		start = len(m.annotations) - maxAnnotations
+	}
+
+	recent := m.annotations[start:]
+	var parts []string
+	for _, a := range recent {
+		offset := ""
+		if !m.startTime.IsZero() {
+			elapsed := a.Time.Sub(m.startTime).Truncate(time.Second)
+			offset = fmt.Sprintf("@%s ", elapsed)
+		}
+		marker := a.Style.Render("▼ " + offset + a.Label)
+		parts = append(parts, marker)
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, joinWithSep(parts, "  ")...)
+}
+
+func joinWithSep(parts []string, sep string) []string {
+	if len(parts) == 0 {
+		return nil
+	}
+	result := make([]string, 0, len(parts)*2-1)
+	for i, p := range parts {
+		if i > 0 {
+			result = append(result, sep)
+		}
+		result = append(result, p)
+	}
+	return result
 }
