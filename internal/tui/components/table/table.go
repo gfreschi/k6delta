@@ -10,6 +10,9 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
+// CellStyleFunc returns a style for a specific cell by row, column, and value.
+type CellStyleFunc func(row, col int, value string) lipgloss.Style
+
 // Column defines a table column.
 type Column struct {
 	Title string
@@ -23,10 +26,11 @@ type Row []string
 
 // Model is the table Bubble Tea model.
 type Model struct {
-	ctx     *tuictx.ProgramContext
-	columns []Column
-	rows    []Row
-	width   int
+	ctx       *tuictx.ProgramContext
+	columns   []Column
+	rows      []Row
+	width     int
+	cellStyle CellStyleFunc
 }
 
 // NewModel creates a table with the given columns.
@@ -44,6 +48,11 @@ func (m *Model) SetWidth(w int) {
 	m.width = w
 }
 
+// SetCellStyle sets a function that provides per-cell styling.
+func (m *Model) SetCellStyle(fn CellStyleFunc) {
+	m.cellStyle = fn
+}
+
 // UpdateContext updates the shared context.
 func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
@@ -55,12 +64,13 @@ func (m Model) View() string {
 		return ""
 	}
 
+	cols := m.resolvedColumns()
 	s := m.ctx.Styles
 	var b strings.Builder
 
 	// Header row
 	var headerCells []string
-	for _, col := range m.columns {
+	for _, col := range cols {
 		cell := fmt.Sprintf("%-*s", col.Width, col.Title)
 		headerCells = append(headerCells, s.Table.Header.Render(cell))
 	}
@@ -68,18 +78,18 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Separator
-	totalWidth := m.totalWidth()
+	totalWidth := m.totalWidthResolved(cols)
 	b.WriteString(s.Table.Separator.Render(strings.Repeat("─", totalWidth)))
 	b.WriteString("\n")
 
 	// Data rows
 	for i, row := range m.rows {
-		style := s.Table.Row
+		rowStyle := s.Table.Row
 		if i%2 == 1 {
-			style = s.Table.RowAlt
+			rowStyle = s.Table.RowAlt
 		}
 		var cells []string
-		for j, col := range m.columns {
+		for j, col := range cols {
 			val := ""
 			if j < len(row) {
 				val = row[j]
@@ -88,8 +98,14 @@ func (m Model) View() string {
 			if col.Align != 0 {
 				align = col.Align
 			}
-			cell := lipgloss.NewStyle().Width(col.Width).Align(align).Render(val)
-			cells = append(cells, style.Render(cell))
+
+			cellContent := lipgloss.NewStyle().Width(col.Width).Align(align).Render(val)
+
+			if m.cellStyle != nil {
+				cells = append(cells, m.cellStyle(i, j, val).Render(cellContent))
+			} else {
+				cells = append(cells, rowStyle.Render(cellContent))
+			}
 		}
 		b.WriteString(strings.Join(cells, " "))
 		if i < len(m.rows)-1 {
@@ -100,11 +116,51 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) totalWidth() int {
+// resolvedColumns returns columns with Grow columns expanded to fill available width.
+func (m Model) resolvedColumns() []Column {
+	if m.width == 0 {
+		return m.columns
+	}
+
+	growCount := 0
+	for _, c := range m.columns {
+		if c.Grow {
+			growCount++
+		}
+	}
+	if growCount == 0 {
+		return m.columns
+	}
+
+	fixed := 0
+	for _, c := range m.columns {
+		if !c.Grow {
+			fixed += c.Width
+		}
+	}
+
+	spacing := len(m.columns) - 1 // spaces between columns
+	remaining := m.width - fixed - spacing
+	if remaining < 0 {
+		remaining = 0
+	}
+	growWidth := remaining / growCount
+
+	resolved := make([]Column, len(m.columns))
+	copy(resolved, m.columns)
+	for i := range resolved {
+		if resolved[i].Grow {
+			resolved[i].Width = growWidth
+		}
+	}
+	return resolved
+}
+
+func (m Model) totalWidthResolved(cols []Column) int {
 	w := 0
-	for _, col := range m.columns {
+	for _, col := range cols {
 		w += col.Width
 	}
-	w += len(m.columns) - 1 // spaces between columns
+	w += len(cols) - 1 // spaces between columns
 	return w
 }
