@@ -181,13 +181,13 @@ func runCI(ctx context.Context, app config.ResolvedApp, prov provider.InfraProvi
 
 	// Compute verdict
 	var cpuPeak *float64
-	if infra != nil && infra.ECSCPU != nil {
-		cpuPeak = infra.ECSCPU.Peak
+	if infra != nil && infra.ServiceCPU != nil {
+		cpuPeak = infra.ServiceCPU.Peak
 	}
 	v := verdict.Compute(verdict.Input{
 		K6Exit:      k6Result.ExitCode,
 		ALB5xx:      infra.ALB5xx,
-		ECScPUPeak:  cpuPeak,
+		ECSCPUPeak:  cpuPeak,
 		TasksBefore: presnap.TaskRunning,
 		TasksAfter:  postsnap.TaskRunning,
 		Activities:  activities,
@@ -203,7 +203,9 @@ func runCI(ctx context.Context, app config.ResolvedApp, prov provider.InfraProvi
 		return err
 	}
 
-	os.Exit(v.ExitCode())
+	if code := v.ExitCode(); code != 0 {
+		return &ExitError{Code: code}
+	}
 	return nil
 }
 
@@ -212,10 +214,10 @@ func buildInfraMetricsCI(metrics []provider.MetricResult) *report.InfraMetrics {
 	for _, m := range metrics {
 		pa := &report.PeakAvg{Peak: m.Peak, Avg: m.Avg}
 		switch m.ID {
-		case "ecs_cpu", "container_cpu":
-			infra.ECSCPU = pa
-		case "ecs_memory", "container_memory":
-			infra.ECSMemory = pa
+		case "service_cpu":
+			infra.ServiceCPU = pa
+		case "service_memory":
+			infra.ServiceMemory = pa
 		case "cluster_cpu_reservation":
 			infra.ClusterCPUReservation = pa
 		case "cluster_memory_reservation":

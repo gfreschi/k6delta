@@ -41,6 +41,14 @@ func TestLoadVerdictConfig(t *testing.T) {
 			want5xxWarn: 1,
 			want5xxFail: 10,
 		},
+		{
+			name:        "explicit zero is honored",
+			yaml:        "provider: ecs\nverdicts:\n  cpu_peak_warn: 0\n  error_5xx_warn: 0\napps:\n  api:\n    cluster: c\n    service: s\n    test_file: t.js\n",
+			wantCPUWarn: 0.0,
+			wantCPUFail: 98.0,
+			want5xxWarn: 0,
+			want5xxFail: 10,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

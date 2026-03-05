@@ -104,8 +104,8 @@ func aggregateStats(stats []containerStat) []provider.MetricResult {
 	}
 
 	return []provider.MetricResult{
-		metricFromValues("container_cpu", cpuValues),
-		metricFromValues("container_memory", memValues),
+		metricFromValues("service_cpu", cpuValues),
+		metricFromValues("service_memory", memValues),
 	}
 }
 

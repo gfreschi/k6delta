@@ -1,12 +1,14 @@
-package config
+package config_test
 
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/gfreschi/k6delta/internal/config"
 )
 
 func TestLoad(t *testing.T) {
-	cfg, err := Load(filepath.Join("testdata", "full.yaml"))
+	cfg, err := config.Load(filepath.Join("testdata", "full.yaml"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -41,7 +43,7 @@ func TestLoad(t *testing.T) {
 }
 
 func TestLoadMinimal(t *testing.T) {
-	cfg, err := Load(filepath.Join("testdata", "minimal.yaml"))
+	cfg, err := config.Load(filepath.Join("testdata", "minimal.yaml"))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestLoadMinimal(t *testing.T) {
 func TestLoadOrDefault(t *testing.T) {
 	// When no k6delta.yaml exists in cwd, returns default config without error.
 	// This test runs from the testdata-less config package dir where no k6delta.yaml exists.
-	cfg, err := LoadOrDefault()
+	cfg, err := config.LoadOrDefault()
 	if err != nil {
 		t.Fatalf("LoadOrDefault: %v", err)
 	}
@@ -80,7 +82,7 @@ func TestLoadOrDefault(t *testing.T) {
 }
 
 func TestInterpolate(t *testing.T) {
-	app := AppConfig{
+	app := config.AppConfig{
 		Cluster:          "myapp-${env}",
 		Service:          "myapp-web-${env}",
 		ASGPrefix:        "myapp-${env}-ecs-",
@@ -88,7 +90,7 @@ func TestInterpolate(t *testing.T) {
 		TestFile:         "tests/${app}/${phase}.js",
 		AlarmPrefix:      "myapp-${env}",
 	}
-	resolved := Interpolate(app, "web", "staging", "load", "eu-west-1", "results")
+	resolved := config.Interpolate(app, "web", "staging", "load", "eu-west-1", "results")
 
 	if resolved.Name != "web" {
 		t.Errorf("Name = %q, want %q", resolved.Name, "web")
@@ -126,13 +128,13 @@ func TestInterpolate(t *testing.T) {
 }
 
 func TestInterpolateOptionalEmpty(t *testing.T) {
-	app := AppConfig{
+	app := config.AppConfig{
 		Cluster:  "myapp-${env}",
 		Service:  "myapp-worker-${env}",
 		TestFile: "tests/${app}/${phase}.js",
 		// ASGPrefix, CapacityProvider, AlarmPrefix intentionally empty
 	}
-	resolved := Interpolate(app, "worker", "prod", "smoke", "us-east-1", "results")
+	resolved := config.Interpolate(app, "worker", "prod", "smoke", "us-east-1", "results")
 
 	if resolved.ASGPrefix != "" {
 		t.Errorf("ASGPrefix = %q, want empty", resolved.ASGPrefix)
@@ -164,7 +166,7 @@ func TestValidatePhase(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := ValidatePhase(tt.phase)
+			err := config.ValidatePhase(tt.phase)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ValidatePhase(%q) error = %v, wantErr %v", tt.phase, err, tt.wantErr)
 			}
@@ -173,7 +175,7 @@ func TestValidatePhase(t *testing.T) {
 }
 
 func TestLoadComposeConfig(t *testing.T) {
-	cfg, err := Load(filepath.Join("testdata", "compose.yaml"))
+	cfg, err := config.Load(filepath.Join("testdata", "compose.yaml"))
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -187,18 +189,18 @@ func TestLoadComposeConfig(t *testing.T) {
 }
 
 func TestInterpolateComposeProject(t *testing.T) {
-	app := AppConfig{
+	app := config.AppConfig{
 		ComposeProject: "myapp-${env}",
 		TestFile:       "tests/${phase}.js",
 	}
-	resolved := Interpolate(app, "web", "staging", "smoke", "local", "results")
+	resolved := config.Interpolate(app, "web", "staging", "smoke", "local", "results")
 	if resolved.ComposeProject != "myapp-staging" {
 		t.Errorf("ComposeProject = %q, want %q", resolved.ComposeProject, "myapp-staging")
 	}
 }
 
 func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := config.DefaultConfig()
 	if cfg.Provider != "ecs" {
 		t.Errorf("Provider = %q, want %q", cfg.Provider, "ecs")
 	}

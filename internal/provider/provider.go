@@ -43,9 +43,9 @@ type AlarmEvent struct {
 
 // Activities groups scaling events and alarm history.
 type Activities struct {
-	ECSScaling []ScalingActivity
-	ASGScaling []ScalingActivity
-	Alarms     []AlarmEvent
+	ServiceScaling []ScalingActivity
+	NodeScaling    []ScalingActivity
+	Alarms         []AlarmEvent
 }
 
 // InfraProvider abstracts infrastructure monitoring for different platforms.

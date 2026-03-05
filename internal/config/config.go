@@ -12,42 +12,60 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// VerdictConfig holds thresholds for pass/warn/fail verdicts.
-// Zero values mean "use default".
+// VerdictConfig holds resolved thresholds for pass/warn/fail verdicts.
+// All fields are guaranteed non-zero after WithDefaults().
 type VerdictConfig struct {
-	CPUPeakWarn      float64 `yaml:"cpu_peak_warn"`
-	CPUPeakFail      float64 `yaml:"cpu_peak_fail"`
-	Error5xxWarn     int     `yaml:"error_5xx_warn"`
-	Error5xxFail     int     `yaml:"error_5xx_fail"`
-	P95RegWarn       float64 `yaml:"p95_regression_warn"`
-	P95RegFail       float64 `yaml:"p95_regression_fail"`
-	ErrorRateRegWarn float64 `yaml:"error_rate_regression_warn"`
+	CPUPeakWarn      float64
+	CPUPeakFail      float64
+	Error5xxWarn     int
+	Error5xxFail     int
+	P95RegWarn       float64
+	P95RegFail       float64
+	ErrorRateRegWarn float64
 }
 
-// WithDefaults returns a VerdictConfig with zero values replaced by defaults.
-func (v VerdictConfig) WithDefaults() VerdictConfig {
-	if v.CPUPeakWarn == 0 {
-		v.CPUPeakWarn = 90.0
+// verdictYAML is the YAML representation of verdict thresholds.
+// Pointer types distinguish "not set" (nil) from intentional zero values.
+type verdictYAML struct {
+	CPUPeakWarn      *float64 `yaml:"cpu_peak_warn"`
+	CPUPeakFail      *float64 `yaml:"cpu_peak_fail"`
+	Error5xxWarn     *int     `yaml:"error_5xx_warn"`
+	Error5xxFail     *int     `yaml:"error_5xx_fail"`
+	P95RegWarn       *float64 `yaml:"p95_regression_warn"`
+	P95RegFail       *float64 `yaml:"p95_regression_fail"`
+	ErrorRateRegWarn *float64 `yaml:"error_rate_regression_warn"`
+}
+
+// WithDefaults returns a VerdictConfig with nil values replaced by defaults.
+func (v verdictYAML) WithDefaults() VerdictConfig {
+	return VerdictConfig{
+		CPUPeakWarn:      floatOr(v.CPUPeakWarn, 90.0),
+		CPUPeakFail:      floatOr(v.CPUPeakFail, 98.0),
+		Error5xxWarn:     intOr(v.Error5xxWarn, 1),
+		Error5xxFail:     intOr(v.Error5xxFail, 10),
+		P95RegWarn:       floatOr(v.P95RegWarn, 10.0),
+		P95RegFail:       floatOr(v.P95RegFail, 25.0),
+		ErrorRateRegWarn: floatOr(v.ErrorRateRegWarn, 50.0),
 	}
-	if v.CPUPeakFail == 0 {
-		v.CPUPeakFail = 98.0
+}
+
+func floatOr(p *float64, def float64) float64 {
+	if p != nil {
+		return *p
 	}
-	if v.Error5xxWarn == 0 {
-		v.Error5xxWarn = 1
+	return def
+}
+
+func intOr(p *int, def int) int {
+	if p != nil {
+		return *p
 	}
-	if v.Error5xxFail == 0 {
-		v.Error5xxFail = 10
-	}
-	if v.P95RegWarn == 0 {
-		v.P95RegWarn = 10.0
-	}
-	if v.P95RegFail == 0 {
-		v.P95RegFail = 25.0
-	}
-	if v.ErrorRateRegWarn == 0 {
-		v.ErrorRateRegWarn = 50.0
-	}
-	return v
+	return def
+}
+
+// DefaultVerdictConfig returns a VerdictConfig with all default thresholds.
+func DefaultVerdictConfig() VerdictConfig {
+	return verdictYAML{}.WithDefaults()
 }
 
 // Config is the top-level k6delta configuration.
@@ -55,7 +73,7 @@ type Config struct {
 	Provider string               `yaml:"provider"`
 	Region   string               `yaml:"region"`
 	Defaults Defaults             `yaml:"defaults"`
-	Verdicts VerdictConfig        `yaml:"verdicts"`
+	Verdicts verdictYAML          `yaml:"verdicts"`
 	Apps     map[string]AppConfig `yaml:"apps"`
 }
 

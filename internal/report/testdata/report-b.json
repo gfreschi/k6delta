@@ -1,7 +1,7 @@
 {
   "run": {"app": "web", "env": "staging", "phase": "load", "start": "2026-03-03T10:00:00Z", "end": "2026-03-03T10:17:00Z", "k6_exit": 0, "duration_seconds": 1020},
   "k6": {"p95_ms": 350.0, "p90_ms": 280.0, "error_rate": 0.005, "checks_rate": 0.995, "total_requests": 6000, "rps_avg": 60.0, "vus_max": 45, "thresholds": {"passed": 5, "failed": 0}},
-  "infrastructure": {"ecs_cpu": {"peak": 65.0, "avg": 42.0}, "ecs_memory": {"peak": 52.0, "avg": 38.0}, "tasks": {"before": 1, "after": 2}, "asg": {"before": 1, "after": 1}, "alb_5xx": 2},
+  "infrastructure": {"service_cpu": {"peak": 65.0, "avg": 42.0}, "service_memory": {"peak": 52.0, "avg": 38.0}, "tasks": {"before": 1, "after": 2}, "asg": {"before": 1, "after": 1}, "alb_5xx": 2},
   "scaling_activities": null,
   "alarm_history": null
 }

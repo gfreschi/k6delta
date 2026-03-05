@@ -6,6 +6,16 @@ import (
 	"os"
 )
 
+// ExitError signals a non-zero exit code without being a failure.
+// main.go inspects this to call os.Exit with the appropriate code.
+type ExitError struct {
+	Code int
+}
+
+func (e *ExitError) Error() string {
+	return fmt.Sprintf("exit status %d", e.Code)
+}
+
 // ciOutput writes JSON to stdout.
 func ciOutput(data any) error {
 	enc := json.NewEncoder(os.Stdout)

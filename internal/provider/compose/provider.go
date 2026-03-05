@@ -60,6 +60,8 @@ func (p *Provider) TakeSnapshot(ctx context.Context) (provider.Snapshot, error) 
 }
 
 // FetchMetrics collects CPU and memory from container stats.
+// Docker stats are point-in-time snapshots, so start/end/period are unused.
+// The interface requires these parameters for CloudWatch-based providers.
 func (p *Provider) FetchMetrics(ctx context.Context, start, end time.Time, period int32) ([]provider.MetricResult, error) {
 	return p.fetchMetricsWithClient(ctx, p.docker)
 }

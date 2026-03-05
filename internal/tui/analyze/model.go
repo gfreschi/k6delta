@@ -210,7 +210,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activitiesDoneMsg:
 		m.activities = msg.activities
 		detail := fmt.Sprintf("%d ECS, %d ASG, %d alarms",
-			len(msg.activities.ECSScaling), len(msg.activities.ASGScaling), len(msg.activities.Alarms))
+			len(msg.activities.ServiceScaling), len(msg.activities.NodeScaling), len(msg.activities.Alarms))
 		flashCmd := m.stepper.MarkDone(stepActivities, detail)
 		m.phase = phaseDisplay
 		m.initDashboard()
@@ -484,9 +484,9 @@ func (m Model) renderMetricsContent() string {
 func (m Model) renderActivitiesContent() string {
 	var lines []string
 
-	if len(m.activities.ECSScaling) > 0 {
+	if len(m.activities.ServiceScaling) > 0 {
 		lines = append(lines, "ECS Task Scaling:")
-		for _, a := range m.activities.ECSScaling {
+		for _, a := range m.activities.ServiceScaling {
 			desc := a.Description
 			if desc == "" {
 				desc = a.Cause
@@ -494,12 +494,12 @@ func (m Model) renderActivitiesContent() string {
 			lines = append(lines, fmt.Sprintf("  %s  %s  %s", a.Time, a.Status, desc))
 		}
 	}
-	if len(m.activities.ASGScaling) > 0 {
+	if len(m.activities.NodeScaling) > 0 {
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, "ASG Scaling:")
-		for _, a := range m.activities.ASGScaling {
+		for _, a := range m.activities.NodeScaling {
 			desc := a.Description
 			if desc == "" {
 				desc = a.Cause

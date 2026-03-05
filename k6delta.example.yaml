@@ -1,7 +1,7 @@
 # k6delta.yaml -- k6delta configuration
 # Variable interpolation: ${env} and ${app} are replaced at runtime.
 
-provider: ecs          # v1 only supports "ecs"
+provider: ecs          # supported: ecs, docker-compose
 region: eu-west-1      # AWS region (overridable with --region)
 
 defaults:

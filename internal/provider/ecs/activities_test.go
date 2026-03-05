@@ -97,11 +97,11 @@ func TestFetchActivities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(activities.ECSScaling) != 1 {
-		t.Errorf("ECSScaling = %d, want 1", len(activities.ECSScaling))
+	if len(activities.ServiceScaling) != 1 {
+		t.Errorf("ServiceScaling = %d, want 1", len(activities.ServiceScaling))
 	}
-	if len(activities.ASGScaling) != 1 {
-		t.Errorf("ASGScaling = %d, want 1", len(activities.ASGScaling))
+	if len(activities.NodeScaling) != 1 {
+		t.Errorf("NodeScaling = %d, want 1", len(activities.NodeScaling))
 	}
 	if len(activities.Alarms) != 1 {
 		t.Errorf("Alarms = %d, want 1", len(activities.Alarms))
@@ -228,11 +228,11 @@ func TestFetchActivitiesNoASG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(activities.ECSScaling) != 0 {
-		t.Errorf("ECSScaling = %d, want 0", len(activities.ECSScaling))
+	if len(activities.ServiceScaling) != 0 {
+		t.Errorf("ServiceScaling = %d, want 0", len(activities.ServiceScaling))
 	}
-	if len(activities.ASGScaling) != 0 {
-		t.Errorf("ASGScaling = %d, want 0", len(activities.ASGScaling))
+	if len(activities.NodeScaling) != 0 {
+		t.Errorf("NodeScaling = %d, want 0", len(activities.NodeScaling))
 	}
 	if len(activities.Alarms) != 0 {
 		t.Errorf("Alarms = %d, want 0", len(activities.Alarms))

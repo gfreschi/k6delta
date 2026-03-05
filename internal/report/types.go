@@ -42,8 +42,8 @@ type ThresholdSummary struct {
 
 // InfraMetrics holds infrastructure metrics collected during the test.
 type InfraMetrics struct {
-	ECSCPU                      *PeakAvg    `json:"ecs_cpu,omitempty"`
-	ECSMemory                   *PeakAvg    `json:"ecs_memory,omitempty"`
+	ServiceCPU                  *PeakAvg    `json:"service_cpu,omitempty"`
+	ServiceMemory               *PeakAvg    `json:"service_memory,omitempty"`
 	ClusterCPUReservation       *PeakAvg    `json:"cluster_cpu_reservation,omitempty"`
 	ClusterMemoryReservation    *PeakAvg    `json:"cluster_memory_reservation,omitempty"`
 	CapacityProviderReservation *PeakAvg    `json:"capacity_provider_reservation,omitempty"`

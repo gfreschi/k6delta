@@ -46,7 +46,7 @@ func TestBuildMetricQueries_AllFields(t *testing.T) {
 		t.Fatalf("got %d queries, want 11", len(queries))
 	}
 	expectedIDs := []string{
-		"ecs_cpu", "ecs_memory", "cluster_cpu_reservation", "cluster_memory_reservation",
+		"service_cpu", "service_memory", "cluster_cpu_reservation", "cluster_memory_reservation",
 		"capacity_provider_reservation", "asg_desired", "asg_in_service",
 		"alb_requests_per_target", "alb_response_time", "alb_5xx", "alb_healthy_hosts",
 	}
@@ -71,7 +71,7 @@ func TestFetchMetricsProgress(t *testing.T) {
 	cwMock := &mockCW{
 		output: &cloudwatch.GetMetricDataOutput{
 			MetricDataResults: []cwtypes.MetricDataResult{
-				{Id: aws.String("ecs_cpu"), Values: []float64{10.0}, Timestamps: []time.Time{t1}},
+				{Id: aws.String("service_cpu"), Values: []float64{10.0}, Timestamps: []time.Time{t1}},
 			},
 		},
 	}
@@ -120,7 +120,7 @@ func TestFetchMetrics(t *testing.T) {
 		output: &cloudwatch.GetMetricDataOutput{
 			MetricDataResults: []cwtypes.MetricDataResult{
 				{
-					Id:         aws.String("ecs_cpu"),
+					Id:         aws.String("service_cpu"),
 					Values:     []float64{10.0, 30.0, 20.0},
 					Timestamps: []time.Time{t1, t2, t1},
 				},

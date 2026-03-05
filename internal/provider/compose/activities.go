@@ -11,9 +11,12 @@ import (
 	"github.com/gfreschi/k6delta/internal/provider"
 )
 
-func (p *Provider) fetchActivitiesWithClient(ctx context.Context, cli interface {
+// dockerEventEmitter abstracts the Docker Events API for testability.
+type dockerEventEmitter interface {
 	Events(ctx context.Context, options client.EventsListOptions) client.EventsResult
-}, start, end time.Time) (provider.Activities, error) {
+}
+
+func (p *Provider) fetchActivitiesWithClient(ctx context.Context, cli dockerEventEmitter, start, end time.Time) (provider.Activities, error) {
 	p.reportProgress("Activities", 1, 1)
 
 	f := make(client.Filters).
@@ -40,7 +43,7 @@ func (p *Provider) fetchActivitiesWithClient(ctx context.Context, cli interface 
 				return parseDockerEvents(msgs), nil
 			}
 			if err != nil {
-				return parseDockerEvents(msgs), nil
+				return parseDockerEvents(msgs), fmt.Errorf("docker events: %w", err)
 			}
 		}
 	}
@@ -57,6 +60,6 @@ func parseDockerEvents(msgs []events.Message) provider.Activities {
 		})
 	}
 	return provider.Activities{
-		ECSScaling: activities,
+		ServiceScaling: activities,
 	}
 }

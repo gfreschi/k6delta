@@ -1,9 +1,14 @@
 package compose
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
 )
 
 func TestComputeCPUPercent(t *testing.T) {
@@ -71,26 +76,26 @@ func TestAggregateStats_returnsCPUAndMemory(t *testing.T) {
 			t.Errorf("metric %s has nil Peak or Avg", r.ID)
 		}
 	}
-	if !ids["container_cpu"] {
-		t.Error("missing container_cpu metric")
+	if !ids["service_cpu"] {
+		t.Error("missing service_cpu metric")
 	}
-	if !ids["container_memory"] {
-		t.Error("missing container_memory metric")
+	if !ids["service_memory"] {
+		t.Error("missing service_memory metric")
 	}
 
 	for _, r := range results {
-		if r.ID == "container_cpu" {
+		if r.ID == "service_cpu" {
 			if *r.Peak != 72.1 {
-				t.Errorf("container_cpu peak = %v, want 72.1", *r.Peak)
+				t.Errorf("service_cpu peak = %v, want 72.1", *r.Peak)
 			}
 			wantAvg := (45.2 + 72.1) / 2
 			if *r.Avg != wantAvg {
-				t.Errorf("container_cpu avg = %v, want %v", *r.Avg, wantAvg)
+				t.Errorf("service_cpu avg = %v, want %v", *r.Avg, wantAvg)
 			}
 		}
-		if r.ID == "container_memory" {
+		if r.ID == "service_memory" {
 			if *r.Peak != 512.0 {
-				t.Errorf("container_memory peak = %v, want 512.0", *r.Peak)
+				t.Errorf("service_memory peak = %v, want 512.0", *r.Peak)
 			}
 		}
 	}
@@ -100,5 +105,75 @@ func TestAggregateStats_empty(t *testing.T) {
 	results := aggregateStats(nil)
 	if results != nil {
 		t.Errorf("expected nil for empty stats, got %v", results)
+	}
+}
+
+func statsBody(stats container.StatsResponse) io.ReadCloser {
+	data, _ := json.Marshal(stats)
+	return io.NopCloser(strings.NewReader(string(data)))
+}
+
+func TestFetchMetricsWithClient_success(t *testing.T) {
+	mock := &mockStatter{
+		mockDocker: mockDocker{
+			containers: []container.Summary{
+				{ID: "c1", State: container.StateRunning},
+			},
+		},
+		statsResults: map[string]client.ContainerStatsResult{
+			"c1": {
+				Body: statsBody(container.StatsResponse{
+					CPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 200},
+						SystemUsage: 1000,
+						OnlineCPUs:  2,
+					},
+					PreCPUStats: container.CPUStats{
+						CPUUsage:    container.CPUUsage{TotalUsage: 100},
+						SystemUsage: 500,
+					},
+					MemoryStats: container.MemoryStats{
+						Usage: 128 * 1024 * 1024,
+					},
+				}),
+			},
+		},
+	}
+
+	p := &Provider{project: "myapp"}
+	results, err := p.fetchMetricsWithClient(context.Background(), mock)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2", len(results))
+	}
+
+	ids := make(map[string]bool)
+	for _, r := range results {
+		ids[r.ID] = true
+	}
+	if !ids["service_cpu"] {
+		t.Error("missing service_cpu metric")
+	}
+	if !ids["service_memory"] {
+		t.Error("missing service_memory metric")
+	}
+}
+
+func TestFetchMetricsWithClient_noContainers(t *testing.T) {
+	mock := &mockStatter{
+		mockDocker: mockDocker{
+			containers: []container.Summary{},
+		},
+	}
+
+	p := &Provider{project: "myapp"}
+	results, err := p.fetchMetricsWithClient(context.Background(), mock)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if results != nil {
+		t.Errorf("expected nil results for no containers, got %v", results)
 	}
 }

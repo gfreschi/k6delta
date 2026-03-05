@@ -11,17 +11,17 @@ import (
 func f64(v float64) *float64 { return &v }
 
 func defaults() config.VerdictConfig {
-	return config.VerdictConfig{}.WithDefaults()
+	return config.DefaultVerdictConfig()
 }
 
 func TestComputeVerdict_AllPass(t *testing.T) {
 	v := computeVerdict(verdict.Input{
 		K6Exit:      0,
 		ALB5xx:      0,
-		ECScPUPeak:  nil,
+		ECSCPUPeak:  nil,
 		TasksBefore: 4,
 		TasksAfter:  8,
-		Activities:  provider.Activities{ECSScaling: []provider.ScalingActivity{{}}},
+		Activities:  provider.Activities{ServiceScaling: []provider.ScalingActivity{{}}},
 	}, defaults())
 	if v.Level != verdict.Pass {
 		t.Errorf("level = %v, want Pass", v.Level)
@@ -52,7 +52,7 @@ func TestComputeVerdict_5xxWarn(t *testing.T) {
 }
 
 func TestComputeVerdict_HighCPUWarn(t *testing.T) {
-	v := computeVerdict(verdict.Input{ECScPUPeak: f64(95.0)}, defaults())
+	v := computeVerdict(verdict.Input{ECSCPUPeak: f64(95.0)}, defaults())
 	if v.Level != verdict.Warn {
 		t.Errorf("level = %v, want Warn", v.Level)
 	}
@@ -79,10 +79,10 @@ func TestComputeVerdict_PassReasons(t *testing.T) {
 	v := computeVerdict(verdict.Input{
 		K6Exit:      0,
 		ALB5xx:      0,
-		ECScPUPeak:  f64(45.0),
+		ECSCPUPeak:  f64(45.0),
 		TasksBefore: 4,
 		TasksAfter:  8,
-		Activities:  provider.Activities{ECSScaling: []provider.ScalingActivity{{}}},
+		Activities:  provider.Activities{ServiceScaling: []provider.ScalingActivity{{}}},
 	}, defaults())
 	if v.Level != verdict.Pass {
 		t.Errorf("level = %v, want Pass", v.Level)

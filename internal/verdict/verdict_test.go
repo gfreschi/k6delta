@@ -13,7 +13,7 @@ func ptrFloat(f float64) *float64 {
 }
 
 func defaults() config.VerdictConfig {
-	return config.VerdictConfig{}.WithDefaults()
+	return config.DefaultVerdictConfig()
 }
 
 func TestCompute_failOnK6Exit(t *testing.T) {
@@ -27,7 +27,7 @@ func TestCompute_failOnK6Exit(t *testing.T) {
 func TestCompute_warnOnCPU(t *testing.T) {
 	in := verdict.Input{
 		K6Exit:     0,
-		ECScPUPeak: ptrFloat(92.0),
+		ECSCPUPeak: ptrFloat(92.0),
 	}
 	v := verdict.Compute(in, defaults())
 	if v.Level != verdict.Warn {
@@ -46,10 +46,11 @@ func TestCompute_passClean(t *testing.T) {
 func TestCompute_configurableCPUThreshold(t *testing.T) {
 	in := verdict.Input{
 		K6Exit:     0,
-		ECScPUPeak: ptrFloat(85.0),
+		ECSCPUPeak: ptrFloat(85.0),
 	}
 	// Custom threshold: warn at 80%
-	cfg := config.VerdictConfig{CPUPeakWarn: 80.0}.WithDefaults()
+	cfg := defaults()
+	cfg.CPUPeakWarn = 80.0
 	v := verdict.Compute(in, cfg)
 	if v.Level != verdict.Warn {
 		t.Errorf("level = %v, want Warn (CPU 85%% > threshold 80%%)", v.Level)
@@ -68,7 +69,8 @@ func TestCompute_configurable5xxThreshold(t *testing.T) {
 		ALB5xx: 3,
 	}
 	// Custom: warn at 5 → 3 < 5 → pass
-	cfg := config.VerdictConfig{Error5xxWarn: 5}.WithDefaults()
+	cfg := defaults()
+	cfg.Error5xxWarn = 5
 	v := verdict.Compute(in, cfg)
 	if v.Level != verdict.Pass {
 		t.Errorf("level = %v, want Pass (3 < threshold 5)", v.Level)
@@ -85,10 +87,10 @@ func TestCompute_allPassWithScaling(t *testing.T) {
 	in := verdict.Input{
 		K6Exit:      0,
 		ALB5xx:      0,
-		ECScPUPeak:  ptrFloat(45.0),
+		ECSCPUPeak:  ptrFloat(45.0),
 		TasksBefore: 4,
 		TasksAfter:  8,
-		Activities:  provider.Activities{ECSScaling: []provider.ScalingActivity{{}}},
+		Activities:  provider.Activities{ServiceScaling: []provider.ScalingActivity{{}}},
 	}
 	v := verdict.Compute(in, defaults())
 	if v.Level != verdict.Pass {

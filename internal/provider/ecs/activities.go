@@ -85,7 +85,7 @@ func (p *Provider) fetchActivitiesWithClients(ctx context.Context, ecsScaling EC
 		if a.Description != nil {
 			sa.Description = *a.Description
 		}
-		result.ECSScaling = append(result.ECSScaling, sa)
+		result.ServiceScaling = append(result.ServiceScaling, sa)
 	}
 
 	// ASG scaling activities (optional)
@@ -112,7 +112,7 @@ func (p *Provider) fetchActivitiesWithClients(ctx context.Context, ecsScaling EC
 			if a.Description != nil {
 				sa.Description = *a.Description
 			}
-			result.ASGScaling = append(result.ASGScaling, sa)
+			result.NodeScaling = append(result.NodeScaling, sa)
 		}
 	}
 

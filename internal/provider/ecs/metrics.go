@@ -145,7 +145,7 @@ func buildMetricQueries(cluster, service, asgName, tgARN, albSuffix, cpName stri
 	var queries []cwtypes.MetricDataQuery
 
 	queries = append(queries, cwtypes.MetricDataQuery{
-		Id:         aws.String("ecs_cpu"),
+		Id:         aws.String("service_cpu"),
 		ReturnData: &returnData,
 		MetricStat: &cwtypes.MetricStat{
 			Metric: &cwtypes.Metric{
@@ -162,7 +162,7 @@ func buildMetricQueries(cluster, service, asgName, tgARN, albSuffix, cpName stri
 	})
 
 	queries = append(queries, cwtypes.MetricDataQuery{
-		Id:         aws.String("ecs_memory"),
+		Id:         aws.String("service_memory"),
 		ReturnData: &returnData,
 		MetricStat: &cwtypes.MetricStat{
 			Metric: &cwtypes.Metric{

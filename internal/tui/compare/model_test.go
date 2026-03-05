@@ -38,8 +38,8 @@ func TestIsLowerBetter(t *testing.T) {
 		{"p95", true},
 		{"p90", true},
 		{"error_rate", true},
-		{"ecs_cpu_peak", true},
-		{"ecs_memory_peak", true},
+		{"service_cpu_peak", true},
+		{"service_memory_peak", true},
 		{"alb_5xx", true},
 		{"throughput", false},
 		{"total_requests", false},
@@ -64,8 +64,8 @@ func TestComputeSummary(t *testing.T) {
 			{Metric: "error_rate", Delta: "+0.1%", Direction: ""},
 		},
 		InfraRows: []report.ComparisonRow{
-			{Metric: "ecs_cpu_peak", Delta: "+20.0%", Direction: "worse"},
-			{Metric: "ecs_memory_peak", Delta: "-3.0%", Direction: "better"},
+			{Metric: "service_cpu_peak", Delta: "+20.0%", Direction: "worse"},
+			{Metric: "service_memory_peak", Delta: "-3.0%", Direction: "better"},
 		},
 	}
 
@@ -80,8 +80,8 @@ func TestComputeSummary(t *testing.T) {
 	if sum.unchanged != 1 {
 		t.Errorf("unchanged = %d, want 1", sum.unchanged)
 	}
-	if sum.worstMetric != "ecs_cpu_peak" {
-		t.Errorf("worstMetric = %q, want %q", sum.worstMetric, "ecs_cpu_peak")
+	if sum.worstMetric != "service_cpu_peak" {
+		t.Errorf("worstMetric = %q, want %q", sum.worstMetric, "service_cpu_peak")
 	}
 	if sum.worstPct != 20.0 {
 		t.Errorf("worstPct = %v, want 20.0", sum.worstPct)

@@ -573,10 +573,10 @@ func buildInfraMetrics(metrics []provider.MetricResult) *report.InfraMetrics {
 	for _, m := range metrics {
 		pa := &report.PeakAvg{Peak: m.Peak, Avg: m.Avg}
 		switch m.ID {
-		case "ecs_cpu":
-			infra.ECSCPU = pa
-		case "ecs_memory":
-			infra.ECSMemory = pa
+		case "service_cpu":
+			infra.ServiceCPU = pa
+		case "service_memory":
+			infra.ServiceMemory = pa
 		case "cluster_cpu_reservation":
 			infra.ClusterCPUReservation = pa
 		case "cluster_memory_reservation":
@@ -772,7 +772,7 @@ func (m Model) renderReport() string {
 			if mr.Peak != nil {
 				alb5xx = int(*mr.Peak)
 			}
-		case "ecs_cpu":
+		case "service_cpu":
 			ecsCPUPeak = mr.Peak
 		}
 	}
@@ -780,7 +780,7 @@ func (m Model) renderReport() string {
 	v := computeVerdict(verdict.Input{
 		K6Exit:      k6Exit,
 		ALB5xx:      alb5xx,
-		ECScPUPeak:  ecsCPUPeak,
+		ECSCPUPeak:  ecsCPUPeak,
 		TasksBefore: m.preSnapshot.TaskRunning,
 		TasksAfter:  m.postSnapshot.TaskRunning,
 		Activities:  m.activities,
@@ -866,9 +866,9 @@ func fmtDelta(before, after int) string {
 
 func metricLabel(id string) string {
 	switch id {
-	case "ecs_cpu":
+	case "service_cpu":
 		return "ECS CPU"
-	case "ecs_memory":
+	case "service_memory":
 		return "ECS Memory"
 	case "cluster_cpu_reservation":
 		return "Cluster CPU Reservation"
@@ -1126,16 +1126,16 @@ func (m Model) renderInfraTable() string {
 func (m Model) renderEventsList() string {
 	var lines []string
 
-	if len(m.activities.ECSScaling) > 0 {
-		for _, ev := range m.activities.ECSScaling {
+	if len(m.activities.ServiceScaling) > 0 {
+		for _, ev := range m.activities.ServiceScaling {
 			lines = append(lines, fmt.Sprintf("[%s] %s", ev.Time, ev.Description))
 		}
 	}
-	if len(m.activities.ASGScaling) > 0 {
+	if len(m.activities.NodeScaling) > 0 {
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-		for _, ev := range m.activities.ASGScaling {
+		for _, ev := range m.activities.NodeScaling {
 			lines = append(lines, fmt.Sprintf("[%s] %s %s", ev.Time, ev.Status, ev.Cause))
 		}
 	}
@@ -1204,7 +1204,7 @@ func (m Model) renderVerdictBar() string {
 			if mr.Peak != nil {
 				alb5xx = int(*mr.Peak)
 			}
-		case "ecs_cpu":
+		case "service_cpu":
 			ecsCPUPeak = mr.Peak
 		}
 	}
@@ -1212,7 +1212,7 @@ func (m Model) renderVerdictBar() string {
 	v := computeVerdict(verdict.Input{
 		K6Exit:      k6Exit,
 		ALB5xx:      alb5xx,
-		ECScPUPeak:  ecsCPUPeak,
+		ECSCPUPeak:  ecsCPUPeak,
 		TasksBefore: m.preSnapshot.TaskRunning,
 		TasksAfter:  m.postSnapshot.TaskRunning,
 		Activities:  m.activities,
@@ -1345,10 +1345,10 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 		}
 		latest := mr.Values[len(mr.Values)-1]
 		switch mr.ID {
-		case "ecs_cpu":
+		case "service_cpu":
 			m.cpuGauge.SetValue(latest, 100.0)
 			m.cpuTrend.Push(latest)
-		case "ecs_memory":
+		case "service_memory":
 			m.memGauge.SetValue(latest, 100.0)
 			m.memTrend.Push(latest)
 		case "capacity_provider_reservation":
@@ -1484,7 +1484,7 @@ func (m Model) renderHealthBar() string {
 	// CPU check
 	cpuOK := true
 	for _, mr := range m.liveMetrics {
-		if mr.ID == "ecs_cpu" && mr.Peak != nil && *mr.Peak >= 90 {
+		if mr.ID == "service_cpu" && mr.Peak != nil && *mr.Peak >= 90 {
 			cpuOK = false
 		}
 	}

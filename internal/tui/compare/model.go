@@ -273,9 +273,9 @@ func (m Model) renderInfraTable() string {
 	for i := range m.result.InfraRows {
 		row := &m.result.InfraRows[i]
 		switch row.Metric {
-		case "ecs_cpu_peak":
+		case "service_cpu_peak":
 			cpuRow = row
-		case "ecs_memory_peak":
+		case "service_memory_peak":
 			memRow = row
 		case "tasks_before":
 			tasksBefore = row
@@ -377,7 +377,7 @@ func parsePctChange(delta string) float64 {
 
 func isLowerBetter(metric string) bool {
 	switch metric {
-	case "p95", "p90", "error_rate", "ecs_cpu_peak", "ecs_memory_peak", "alb_5xx":
+	case "p95", "p90", "error_rate", "service_cpu_peak", "service_memory_peak", "alb_5xx":
 		return true
 	default:
 		return false

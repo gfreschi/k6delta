@@ -159,29 +159,29 @@ func CompareReports(pathA, pathB string) (*ComparisonResult, error) {
 
 	var aCPUPeak, bCPUPeak float64
 	aCPUStr, bCPUStr := "-", "-"
-	if aInfra.ECSCPU != nil {
-		aCPUPeak = floatVal(aInfra.ECSCPU.Peak)
-		aCPUStr = floatStr(aInfra.ECSCPU.Peak)
+	if aInfra.ServiceCPU != nil {
+		aCPUPeak = floatVal(aInfra.ServiceCPU.Peak)
+		aCPUStr = floatStr(aInfra.ServiceCPU.Peak)
 	}
-	if bInfra.ECSCPU != nil {
-		bCPUPeak = floatVal(bInfra.ECSCPU.Peak)
-		bCPUStr = floatStr(bInfra.ECSCPU.Peak)
+	if bInfra.ServiceCPU != nil {
+		bCPUPeak = floatVal(bInfra.ServiceCPU.Peak)
+		bCPUStr = floatStr(bInfra.ServiceCPU.Peak)
 	}
 
 	var aMemPeak, bMemPeak float64
 	aMemStr, bMemStr := "-", "-"
-	if aInfra.ECSMemory != nil {
-		aMemPeak = floatVal(aInfra.ECSMemory.Peak)
-		aMemStr = floatStr(aInfra.ECSMemory.Peak)
+	if aInfra.ServiceMemory != nil {
+		aMemPeak = floatVal(aInfra.ServiceMemory.Peak)
+		aMemStr = floatStr(aInfra.ServiceMemory.Peak)
 	}
-	if bInfra.ECSMemory != nil {
-		bMemPeak = floatVal(bInfra.ECSMemory.Peak)
-		bMemStr = floatStr(bInfra.ECSMemory.Peak)
+	if bInfra.ServiceMemory != nil {
+		bMemPeak = floatVal(bInfra.ServiceMemory.Peak)
+		bMemStr = floatStr(bInfra.ServiceMemory.Peak)
 	}
 
 	infraDefs := []compRow{
-		{"ecs_cpu_peak", aCPUStr, bCPUStr, aCPUPeak, bCPUPeak, "lower_better"},
-		{"ecs_memory_peak", aMemStr, bMemStr, aMemPeak, bMemPeak, "lower_better"},
+		{"service_cpu_peak", aCPUStr, bCPUStr, aCPUPeak, bCPUPeak, "lower_better"},
+		{"service_memory_peak", aMemStr, bMemStr, aMemPeak, bMemPeak, "lower_better"},
 		{"tasks_before", fmt.Sprintf("%d", aInfra.Tasks.Before), fmt.Sprintf("%d", bInfra.Tasks.Before), float64(aInfra.Tasks.Before), float64(bInfra.Tasks.Before), ""},
 		{"tasks_after", fmt.Sprintf("%d", aInfra.Tasks.After), fmt.Sprintf("%d", bInfra.Tasks.After), float64(aInfra.Tasks.After), float64(bInfra.Tasks.After), ""},
 		{"asg_before", fmt.Sprintf("%d", aInfra.ASG.Before), fmt.Sprintf("%d", bInfra.ASG.Before), float64(aInfra.ASG.Before), float64(bInfra.ASG.Before), ""},
@@ -263,8 +263,8 @@ func CompareReportsJSON(pathA, pathB string) ([]byte, error) {
 				"vus_max":        {A: jsonNumInt(aK6.VUsMax), B: jsonNumInt(bK6.VUsMax)},
 			},
 			Infra: map[string]compPairJSON{
-				"ecs_cpu_peak":    {A: jsonNumFromPeakAvg(aInfra.ECSCPU), B: jsonNumFromPeakAvg(bInfra.ECSCPU)},
-				"ecs_memory_peak": {A: jsonNumFromPeakAvg(aInfra.ECSMemory), B: jsonNumFromPeakAvg(bInfra.ECSMemory)},
+				"service_cpu_peak":    {A: jsonNumFromPeakAvg(aInfra.ServiceCPU), B: jsonNumFromPeakAvg(bInfra.ServiceCPU)},
+				"service_memory_peak": {A: jsonNumFromPeakAvg(aInfra.ServiceMemory), B: jsonNumFromPeakAvg(bInfra.ServiceMemory)},
 				"tasks_before":    {A: aInfra.Tasks.Before, B: bInfra.Tasks.Before},
 				"tasks_after":     {A: aInfra.Tasks.After, B: bInfra.Tasks.After},
 				"asg_before":      {A: aInfra.ASG.Before, B: bInfra.ASG.Before},

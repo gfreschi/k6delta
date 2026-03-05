@@ -50,7 +50,7 @@ func (r Result) ExitCode() int {
 type Input struct {
 	K6Exit      int
 	ALB5xx      int
-	ECScPUPeak  *float64
+	ECSCPUPeak  *float64
 	TasksBefore int
 	TasksAfter  int
 	Activities  provider.Activities
@@ -78,21 +78,21 @@ func Compute(in Input, cfg config.VerdictConfig) Result {
 	}
 
 	// WARN/FAIL: CPU peak above threshold
-	if in.ECScPUPeak != nil {
-		if *in.ECScPUPeak > cfg.CPUPeakFail {
+	if in.ECSCPUPeak != nil {
+		if *in.ECSCPUPeak > cfg.CPUPeakFail {
 			v.Level = Fail
-			v.Reasons = append(v.Reasons, fmt.Sprintf("ECS CPU peaked at %.1f%% (threshold: %.0f%%)", *in.ECScPUPeak, cfg.CPUPeakFail))
-		} else if *in.ECScPUPeak > cfg.CPUPeakWarn {
+			v.Reasons = append(v.Reasons, fmt.Sprintf("ECS CPU peaked at %.1f%% (threshold: %.0f%%)", *in.ECSCPUPeak, cfg.CPUPeakFail))
+		} else if *in.ECSCPUPeak > cfg.CPUPeakWarn {
 			if v.Level < Warn {
 				v.Level = Warn
 			}
-			v.Reasons = append(v.Reasons, fmt.Sprintf("ECS CPU peaked at %.1f%% (threshold: %.0f%%)", *in.ECScPUPeak, cfg.CPUPeakWarn))
+			v.Reasons = append(v.Reasons, fmt.Sprintf("ECS CPU peaked at %.1f%% (threshold: %.0f%%)", *in.ECSCPUPeak, cfg.CPUPeakWarn))
 		}
 	}
 
 	// INFO: tasks changed without scaling events
 	tasksChanged := in.TasksBefore != in.TasksAfter
-	hasScalingEvents := len(in.Activities.ECSScaling) > 0 || len(in.Activities.ASGScaling) > 0
+	hasScalingEvents := len(in.Activities.ServiceScaling) > 0 || len(in.Activities.NodeScaling) > 0
 	if tasksChanged && !hasScalingEvents {
 		v.Reasons = append(v.Reasons, fmt.Sprintf("tasks changed (%d→%d) but no scaling events recorded", in.TasksBefore, in.TasksAfter))
 	}
