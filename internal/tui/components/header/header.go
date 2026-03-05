@@ -30,11 +30,6 @@ func NewModel(ctx *tuictx.ProgramContext, app, env, phase string) Model {
 	return Model{ctx: ctx, app: app, env: env, phase: phase, spinner: s}
 }
 
-// SetSuffix sets the status text (backward compatibility alias for SetStatus).
-func (m *Model) SetSuffix(s string) {
-	m.status = s
-}
-
 // SetStatus sets the right-side status text.
 func (m *Model) SetStatus(s string) {
 	m.status = s

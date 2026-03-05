@@ -40,14 +40,14 @@ func TestHeaderElapsedDisplay(t *testing.T) {
 	}
 }
 
-func TestHeaderSuffixCompat(t *testing.T) {
+func TestHeaderSetStatus(t *testing.T) {
 	ctx := tuictx.New(80, 24)
 	h := header.NewModel(ctx, "myapp", "prod", "ramp-up")
-	h.SetSuffix("Done")
+	h.SetStatus("Done")
 
 	view := h.View()
 	if !strings.Contains(view, "Done") {
-		t.Fatalf("expected suffix in header, got: %s", view)
+		t.Fatalf("expected status in header, got: %s", view)
 	}
 }
 

@@ -9,15 +9,18 @@ import (
 
 // Styles holds pre-built lipgloss styles grouped by component.
 type Styles struct {
-	Common  common.CommonStyles
-	Header  HeaderStyles
-	Panel   PanelStyles
-	Table   TableStyles
-	Footer  FooterStyles
-	Stepper StepperStyles
-	Verdict VerdictStyles
-	Delta   DeltaStyles
-	Chart   ChartStyles
+	Common    common.CommonStyles
+	Header    HeaderStyles
+	Panel     PanelStyles
+	Table     TableStyles
+	Footer    FooterStyles
+	Stepper   StepperStyles
+	Verdict   VerdictStyles
+	Delta     DeltaStyles
+	Chart     ChartStyles
+	Tile      TileStyles
+	Timeline  TimelineStyles
+	StatusBar StatusBarStyles
 }
 
 // ChartStyles for ntcharts chart configuration (axis, label, line).
@@ -76,6 +79,28 @@ type VerdictStyles struct {
 	Warn   lipgloss.Style
 	Fail   lipgloss.Style
 	Reason lipgloss.Style
+}
+
+// TileStyles for KPI tile borders with status coloring.
+type TileStyles struct {
+	Border      lipgloss.Style
+	BorderOK    lipgloss.Style
+	BorderWarn  lipgloss.Style
+	BorderError lipgloss.Style
+}
+
+// TimelineStyles for event timeline entries.
+type TimelineStyles struct {
+	Alarm    lipgloss.Style
+	Scaling  lipgloss.Style
+	Resolved lipgloss.Style
+}
+
+// StatusBarStyles for the bottom status bar.
+type StatusBarStyles struct {
+	Root  lipgloss.Style
+	Label lipgloss.Style
+	Value lipgloss.Style
 }
 
 // DeltaStyles for comparison delta coloring with intensity tiers.
@@ -148,6 +173,22 @@ func InitStyles(t theme.Theme) Styles {
 			Axis:  lipgloss.NewStyle().Foreground(t.FaintText),
 			Label: lipgloss.NewStyle().Foreground(t.FaintText),
 			Line:  lipgloss.NewStyle().Foreground(t.PrimaryText),
+		},
+		Tile: TileStyles{
+			Border:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.TileBorder),
+			BorderOK:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.TileBorderOK),
+			BorderWarn:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.TileBorderWarn),
+			BorderError: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.TileBorderError),
+		},
+		Timeline: TimelineStyles{
+			Alarm:    lipgloss.NewStyle().Foreground(t.TimelineAlarm),
+			Scaling:  lipgloss.NewStyle().Foreground(t.TimelineScaling),
+			Resolved: lipgloss.NewStyle().Foreground(t.TimelineResolved),
+		},
+		StatusBar: StatusBarStyles{
+			Root:  lipgloss.NewStyle().Foreground(t.FaintText),
+			Label: lipgloss.NewStyle().Bold(true).Foreground(t.SecondaryText),
+			Value: lipgloss.NewStyle().Foreground(t.PrimaryText),
 		},
 		Delta: DeltaStyles{
 			Better:        lipgloss.NewStyle().Foreground(t.DeltaBetter),

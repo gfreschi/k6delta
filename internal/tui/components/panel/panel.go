@@ -30,6 +30,7 @@ type Model struct {
 	content        string
 	child          tea.Model // optional child model whose View() replaces content
 	focused        bool
+	expandMode     int // 0=normal, 1=expanded, 2=full
 	viewport       viewport.Model
 	overflow       bool // true when content exceeds panel body height
 	transitioning  bool
@@ -66,6 +67,35 @@ func (m *Model) SetContent(content string) {
 func (m *Model) SetModel(child tea.Model) {
 	m.child = child
 	m.content = ""
+}
+
+// Focused returns whether this panel is focused.
+func (m Model) Focused() bool { return m.focused }
+
+// CycleExpand cycles the expand mode: normal -> expanded -> full -> normal.
+func (m *Model) CycleExpand() {
+	m.expandMode = (m.expandMode + 1) % 3
+}
+
+// ResetExpand resets expand mode to normal.
+func (m *Model) ResetExpand() {
+	m.expandMode = 0
+}
+
+// ExpandMode returns the current expand mode.
+func (m Model) ExpandMode() int { return m.expandMode }
+
+// Content returns the current string content (empty if child model is set).
+func (m Model) Content() string { return m.content }
+
+// Update forwards messages to the child model when focused, if one is set.
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	if m.child != nil && m.focused {
+		var cmd tea.Cmd
+		m.child, cmd = m.child.Update(msg)
+		return m, cmd
+	}
+	return m, nil
 }
 
 // SetTitle updates the panel title without recreating the model.
@@ -115,8 +145,15 @@ func (m *Model) SetDimensions(width, height int) {
 	m.height = height
 	m.viewport.Width = bodyWidth(width)
 	m.viewport.Height = bodyHeight(height)
-	// Re-evaluate overflow
-	m.SetContent(m.content)
+	// Re-evaluate overflow only for string content (child models handle their own sizing)
+	if m.child == nil {
+		m.viewport.SetContent(m.content)
+		lines := strings.Count(m.content, "\n")
+		if !strings.HasSuffix(m.content, "\n") && len(m.content) > 0 {
+			lines++
+		}
+		m.overflow = lines > m.viewport.Height
+	}
 }
 
 // UpdateContext updates the shared context.

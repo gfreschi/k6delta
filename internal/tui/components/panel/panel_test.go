@@ -135,6 +135,90 @@ func (c *testChild) Init() tea.Cmd                       { return nil }
 func (c *testChild) Update(tea.Msg) (tea.Model, tea.Cmd) { return c, nil }
 func (c *testChild) View() string                        { return c.content }
 
+func TestPanel_cycleExpand(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	if p.ExpandMode() != 0 {
+		t.Fatalf("initial expand mode = %d, want 0", p.ExpandMode())
+	}
+
+	p.CycleExpand()
+	if p.ExpandMode() != 1 {
+		t.Fatalf("after 1 cycle = %d, want 1", p.ExpandMode())
+	}
+
+	p.CycleExpand()
+	if p.ExpandMode() != 2 {
+		t.Fatalf("after 2 cycles = %d, want 2", p.ExpandMode())
+	}
+
+	p.CycleExpand()
+	if p.ExpandMode() != 0 {
+		t.Fatalf("after 3 cycles = %d, want 0 (wrapped)", p.ExpandMode())
+	}
+}
+
+func TestPanel_resetExpand(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	p.CycleExpand()
+	p.CycleExpand()
+	p.ResetExpand()
+	if p.ExpandMode() != 0 {
+		t.Fatalf("after reset = %d, want 0", p.ExpandMode())
+	}
+}
+
+func TestPanel_focused(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	if p.Focused() {
+		t.Fatal("expected not focused initially")
+	}
+	p.SetFocused(true)
+	if !p.Focused() {
+		t.Fatal("expected focused after SetFocused(true)")
+	}
+}
+
+func TestPanel_content(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	p.SetContent("hello world")
+	if p.Content() != "hello world" {
+		t.Fatalf("Content() = %q, want %q", p.Content(), "hello world")
+	}
+
+	child := &testChild{content: "child"}
+	p.SetModel(child)
+	if p.Content() != "" {
+		t.Fatalf("Content() after SetModel = %q, want empty", p.Content())
+	}
+}
+
+func TestPanel_updateForwardsToChild(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	child := &testChild{content: "before"}
+	p.SetModel(child)
+	p.SetFocused(true)
+	// Complete transition
+	for p.AdvanceTransition() != nil {
+	}
+
+	p, _ = p.Update(tea.KeyMsg{})
+	// Child should still be present
+	view := p.View()
+	if !strings.Contains(view, "before") {
+		t.Fatalf("expected child content in view after Update, got: %s", view)
+	}
+}
+
 func TestPanel_scrollUpWraps(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	p := panel.NewModel(ctx, "Test", 40, 10)

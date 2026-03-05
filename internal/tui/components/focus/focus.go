@@ -25,6 +25,14 @@ func (m *Manager) Prev() {
 	m.current = (m.current - 1 + m.count) % m.count
 }
 
+// SetFocus sets focus to the given index, wrapping out-of-range values.
+func (m *Manager) SetFocus(index int) {
+	m.current = ((index % m.count) + m.count) % m.count
+}
+
+// Count returns the number of focusable items.
+func (m *Manager) Count() int { return m.count }
+
 // IsFocused returns true if the given index is focused.
 func (m *Manager) IsFocused(index int) bool {
 	return m.current == index

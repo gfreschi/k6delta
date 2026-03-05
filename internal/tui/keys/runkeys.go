@@ -15,3 +15,15 @@ var RunKeys = RunKeyMap{
 	OpenHTML: key.NewBinding(key.WithKeys("o"), key.WithHelp("o", "open HTML")),
 	RawView:  key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "raw view")),
 }
+
+// LiveKeyMap defines keys specific to the live dashboard mode.
+type LiveKeyMap struct {
+	ToggleGraphs key.Binding
+	Abort        key.Binding
+}
+
+// LiveKeys is the global live-mode key binding set.
+var LiveKeys = LiveKeyMap{
+	ToggleGraphs: key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "graphs")),
+	Abort:        key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "abort")),
+}

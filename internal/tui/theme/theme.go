@@ -17,9 +17,16 @@ type Theme struct {
 	WarningText   lipgloss.AdaptiveColor
 	ErrorText     lipgloss.AdaptiveColor
 	HeaderText    lipgloss.AdaptiveColor
-	DeltaBetter   lipgloss.AdaptiveColor
-	DeltaWorse    lipgloss.AdaptiveColor
-	DeltaNeutral  lipgloss.AdaptiveColor
+	DeltaBetter      lipgloss.AdaptiveColor
+	DeltaWorse       lipgloss.AdaptiveColor
+	DeltaNeutral     lipgloss.AdaptiveColor
+	TileBorder       lipgloss.AdaptiveColor
+	TileBorderOK     lipgloss.AdaptiveColor
+	TileBorderWarn   lipgloss.AdaptiveColor
+	TileBorderError  lipgloss.AdaptiveColor
+	TimelineAlarm    lipgloss.AdaptiveColor
+	TimelineScaling  lipgloss.AdaptiveColor
+	TimelineResolved lipgloss.AdaptiveColor
 }
 
 // DefaultTheme provides the muted professional palette.
@@ -34,7 +41,14 @@ var DefaultTheme = Theme{
 	WarningText:   lipgloss.AdaptiveColor{Light: "003", Dark: "003"},
 	ErrorText:     lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
 	HeaderText:    lipgloss.AdaptiveColor{Light: "012", Dark: "012"},
-	DeltaBetter:   lipgloss.AdaptiveColor{Light: "002", Dark: "002"},
-	DeltaWorse:    lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
-	DeltaNeutral:  lipgloss.AdaptiveColor{Light: "008", Dark: "243"},
+	DeltaBetter:      lipgloss.AdaptiveColor{Light: "002", Dark: "002"},
+	DeltaWorse:       lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
+	DeltaNeutral:     lipgloss.AdaptiveColor{Light: "008", Dark: "243"},
+	TileBorder:       lipgloss.AdaptiveColor{Light: "008", Dark: "008"},
+	TileBorderOK:     lipgloss.AdaptiveColor{Light: "002", Dark: "002"},
+	TileBorderWarn:   lipgloss.AdaptiveColor{Light: "003", Dark: "003"},
+	TileBorderError:  lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
+	TimelineAlarm:    lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
+	TimelineScaling:  lipgloss.AdaptiveColor{Light: "003", Dark: "003"},
+	TimelineResolved: lipgloss.AdaptiveColor{Light: "002", Dark: "002"},
 }

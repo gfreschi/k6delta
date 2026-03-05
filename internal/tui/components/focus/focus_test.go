@@ -52,3 +52,31 @@ func TestFocusManager_isFocused(t *testing.T) {
 		t.Error("expected index 0 to not be focused after Next")
 	}
 }
+
+func TestFocusManager_setFocus(t *testing.T) {
+	fm := focus.New(4)
+
+	fm.SetFocus(2)
+	if fm.Current() != 2 {
+		t.Errorf("SetFocus(2) = %d, want 2", fm.Current())
+	}
+
+	// Wraps forward
+	fm.SetFocus(5)
+	if fm.Current() != 1 {
+		t.Errorf("SetFocus(5) with count=4 = %d, want 1", fm.Current())
+	}
+
+	// Wraps negative
+	fm.SetFocus(-1)
+	if fm.Current() != 3 {
+		t.Errorf("SetFocus(-1) with count=4 = %d, want 3", fm.Current())
+	}
+}
+
+func TestFocusManager_count(t *testing.T) {
+	fm := focus.New(5)
+	if fm.Count() != 5 {
+		t.Errorf("Count() = %d, want 5", fm.Count())
+	}
+}
