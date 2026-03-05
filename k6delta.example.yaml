@@ -9,6 +9,16 @@ defaults:
   phase: smoke         # default --phase value
   results_dir: tests/performance/results
 
+# Verdict thresholds (optional, shown with defaults):
+# verdicts:
+#   cpu_peak_warn: 90        # WARN if ECS CPU peak > this %
+#   cpu_peak_fail: 98        # FAIL if ECS CPU peak > this %
+#   error_5xx_warn: 1        # WARN if 5xx count >= this
+#   error_5xx_fail: 10       # FAIL if 5xx count >= this
+#   p95_regression_warn: 10  # WARN if p95 regresses > this % (compare)
+#   p95_regression_fail: 25  # FAIL if p95 regresses > this % (compare)
+#   error_rate_regression_warn: 50  # WARN if error rate regresses > this %
+
 apps:
   web:
     cluster: "myapp-${env}"
