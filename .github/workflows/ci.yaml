@@ -39,6 +39,14 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Run tests
         run: go test ./... -count=1 -race
+      - name: Verify golden files are up to date
+        run: |
+          UPDATE_GOLDEN=1 go test ./internal/tui/... -count=1
+          if ! git diff --quiet internal/tui/**/testdata/*.golden 2>/dev/null; then
+            echo "::error::Golden files are out of date. Run 'make test-update' and commit the changes."
+            git diff internal/tui/**/testdata/*.golden
+            exit 1
+          fi
 
   build:
     runs-on: ubuntu-latest
