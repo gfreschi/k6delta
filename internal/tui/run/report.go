@@ -169,7 +169,7 @@ func (m *Model) initDashboard() {
 	infraW := w * 55 / 100
 	eventsW := w - infraW
 	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [3]", infraW, bottomH)
-	m.infraPanel.SetContent(m.renderInfraTable())
+	m.infraPanel.SetContent(m.renderInfraTileGrid())
 
 	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, bottomH)
 	m.eventsPanel.SetContent(m.renderEventsList())
@@ -225,14 +225,15 @@ func (m Model) viewReportDashboard() string {
 	}
 
 	width := m.ctx.ContentWidth
-	verdict := m.renderVerdictBar()
+	verdictTile := m.renderVerdictTile()
+	vitalSigns := m.renderVitalSignsStrip()
 
 	focused := m.focusMgr.Current()
 	panels := [4]panel.Model{m.k6Panel, m.graphsPanel, m.infraPanel, m.eventsPanel}
 
 	// Full expand: only the focused panel renders
 	if panels[focused].ExpandMode() == constants.ExpandFull {
-		return lipgloss.JoinVertical(lipgloss.Left, panels[focused].View(), verdict)
+		return lipgloss.JoinVertical(lipgloss.Left, panels[focused].View(), verdictTile)
 	}
 
 	switch {
@@ -245,14 +246,15 @@ func (m Model) viewReportDashboard() string {
 			m.infraPanel.View(),
 			m.eventsPanel.View(),
 		)
-		return lipgloss.JoinVertical(lipgloss.Left, topRow, bottomRow, verdict)
+		return lipgloss.JoinVertical(lipgloss.Left, vitalSigns, topRow, bottomRow, verdictTile)
 	case width >= constants.BreakpointStacked:
 		return lipgloss.JoinVertical(lipgloss.Left,
+			vitalSigns,
 			m.k6Panel.View(),
 			m.graphsPanel.View(),
 			m.infraPanel.View(),
 			m.eventsPanel.View(),
-			verdict,
+			verdictTile,
 		)
 	default:
 		return m.renderReport()
@@ -362,44 +364,6 @@ func (m Model) renderK6SummaryGrid() string {
 	return b.String()
 }
 
-func (m Model) renderInfraTable() string {
-	s := m.ctx.Styles
-
-	if len(m.metrics) == 0 && m.preSnapshot.TaskRunning == 0 && m.postSnapshot.TaskRunning == 0 {
-		return s.Common.FaintTextStyle.Render("Infrastructure metrics pending")
-	}
-
-	var lines []string
-
-	// Snapshot deltas
-	lines = append(lines,
-		fmt.Sprintf("%s  %d -> %d  %s",
-			s.Table.Label.Render("ECS tasks"),
-			m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning,
-			fmtDelta(m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning)),
-		fmt.Sprintf("%s  %d -> %d  %s",
-			s.Table.Label.Render("EC2 instances"),
-			m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances,
-			fmtDelta(m.preSnapshot.ASGInstances, m.postSnapshot.ASGInstances)),
-		"",
-	)
-
-	// CloudWatch peaks
-	for _, mr := range m.metrics {
-		label := metricLabel(mr.ID)
-		if label == "" {
-			continue
-		}
-		if mr.Peak != nil && mr.Avg != nil {
-			lines = append(lines, fmt.Sprintf("%s  peak=%s  avg=%s",
-				s.Table.Label.Render(label),
-				fmtMetricValue(mr.ID, *mr.Peak),
-				fmtMetricValue(mr.ID, *mr.Avg)))
-		}
-	}
-
-	return strings.Join(lines, "\n")
-}
 
 func (m Model) renderEventsList() string {
 	var lines []string
@@ -467,37 +431,43 @@ func (m Model) renderGraphsPanelContent() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (m Model) renderVerdictBar() string {
-	s := m.ctx.Styles
-
+func (m Model) renderVerdictTile() string {
 	if m.computedVerdict == nil {
 		return ""
 	}
 	v := m.computedVerdict
+	s := m.ctx.Styles
+	width := m.ctx.ContentWidth
 
-	var verdictStyle lipgloss.Style
+	var icon, word string
+	var borderStyle, textStyle lipgloss.Style
+
 	switch v.Level {
 	case verdict.Fail:
-		verdictStyle = s.Verdict.Fail
+		icon = "\u2717"
+		word = "F A I L"
+		borderStyle = s.Tile.BorderError
+		textStyle = s.Verdict.Fail
 	case verdict.Warn:
-		verdictStyle = s.Verdict.Warn
+		icon = "\u26a0"
+		word = "W A R N"
+		borderStyle = s.Tile.BorderWarn
+		textStyle = s.Verdict.Warn
 	default:
-		verdictStyle = s.Verdict.Pass
+		icon = "\u2713"
+		word = "P A S S"
+		borderStyle = s.Tile.BorderOK
+		textStyle = s.Verdict.Pass
 	}
 
-	var b strings.Builder
-	b.WriteString("  " + s.Common.BoldStyle.Render("Verdict: ") + verdictStyle.Render(v.Level.String()))
+	titleLine := textStyle.Render(fmt.Sprintf("  %s  %s", icon, word))
+	lines := []string{titleLine}
 	for _, reason := range v.Reasons {
-		icon := "\u2713"
-		switch v.Level {
-		case verdict.Fail:
-			icon = "\u2717"
-		case verdict.Warn:
-			icon = "\u26a0"
-		}
-		b.WriteString("\n  " + icon + " " + reason)
+		lines = append(lines, s.Verdict.Reason.Render("  "+reason))
 	}
-	return b.String()
+
+	inner := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return borderStyle.Width(width).Render(inner)
 }
 
 func (m *Model) initHealthTiles() {
@@ -556,4 +526,152 @@ func (m Model) renderHealthMicroTiles() string {
 		views = append(views, tile.View())
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, views...)
+}
+
+// renderVitalSignsStrip renders a row of KPI tiles above the report panel grid.
+func (m Model) renderVitalSignsStrip() string {
+	if m.report == nil || m.report.K6 == nil {
+		return ""
+	}
+
+	k6 := m.report.K6
+	width := m.ctx.ContentWidth
+	tileW := 14
+	tilesPerRow := max(width/(tileW+2), 1)
+
+	var tiles []string
+
+	// p95 tile
+	if k6.P95ms != nil {
+		t := metriccard.NewModel(m.ctx, "p95", "ms", tileW)
+		t.SetValue(*k6.P95ms, 500)
+		tiles = append(tiles, t.View())
+	}
+
+	// Error rate tile
+	if k6.ErrorRate != nil {
+		t := metriccard.NewModel(m.ctx, "err", "%", tileW)
+		t.SetValue(*k6.ErrorRate*100, 5)
+		tiles = append(tiles, t.View())
+	}
+
+	// RPS tile
+	if k6.RPSAvg != nil {
+		t := metriccard.NewModel(m.ctx, "rps", "/s", tileW)
+		t.SetValue(*k6.RPSAvg, *k6.RPSAvg*2)
+		tiles = append(tiles, t.View())
+	}
+
+	// CPU peak tile
+	if m.report.Infrastructure != nil && m.report.Infrastructure.ServiceCPU != nil {
+		if peak := m.report.Infrastructure.ServiceCPU.Peak; peak != nil {
+			t := metriccard.NewModel(m.ctx, "cpu", "%", tileW)
+			t.SetValue(*peak, 100)
+			tiles = append(tiles, t.View())
+		}
+	}
+
+	// Task scaling tile
+	if m.report.Infrastructure != nil {
+		tasks := m.report.Infrastructure.Tasks
+		t := metriccard.NewModel(m.ctx, "scale", "count", tileW)
+		t.SetValue(float64(tasks.After), float64(max(tasks.After, tasks.Before, 1)))
+		t.SetDelta(fmt.Sprintf("%d\u2192%d", tasks.Before, tasks.After))
+		if tasks.After >= tasks.Before {
+			t.SetSeverity(metriccard.SeverityOK)
+		} else {
+			t.SetSeverity(metriccard.SeverityWarn)
+		}
+		tiles = append(tiles, t.View())
+	}
+
+	if len(tiles) == 0 {
+		return ""
+	}
+	return renderTileGrid(tiles, tilesPerRow)
+}
+
+// renderTileGrid arranges tile views into rows of tilesPerRow.
+func renderTileGrid(tiles []string, tilesPerRow int) string {
+	var rows []string
+	for i := 0; i < len(tiles); i += tilesPerRow {
+		end := i + tilesPerRow
+		if end > len(tiles) {
+			end = len(tiles)
+		}
+		row := lipgloss.JoinHorizontal(lipgloss.Top, tiles[i:end]...)
+		rows = append(rows, row)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
+}
+
+// renderInfraTileGrid renders infrastructure metrics as KPI tiles.
+func (m Model) renderInfraTileGrid() string {
+	if m.report == nil || m.report.Infrastructure == nil {
+		return m.ctx.Styles.Common.FaintTextStyle.Render("Infrastructure metrics pending")
+	}
+	infra := m.report.Infrastructure
+
+	tileW := 14
+	infraW := m.ctx.ContentWidth * 55 / 100
+	innerW := infraW - 4 // panel borders + padding
+	tilesPerRow := max(innerW/(tileW+2), 1)
+
+	var tiles []string
+
+	// CPU tile (report variant with peak/avg + sparkline)
+	if infra.ServiceCPU != nil {
+		cpu := infra.ServiceCPU
+		t := metriccard.NewModel(m.ctx, "cpu", "%", tileW)
+		if cpu.Peak != nil && cpu.Avg != nil {
+			t.SetReportData(*cpu.Peak, *cpu.Avg, m.metricValues("service_cpu"))
+		}
+		tiles = append(tiles, t.View())
+	}
+
+	// Memory tile
+	if infra.ServiceMemory != nil {
+		mem := infra.ServiceMemory
+		t := metriccard.NewModel(m.ctx, "mem", "%", tileW)
+		if mem.Peak != nil && mem.Avg != nil {
+			t.SetReportData(*mem.Peak, *mem.Avg, m.metricValues("service_memory"))
+		}
+		tiles = append(tiles, t.View())
+	}
+
+	// Tasks tile (count variant)
+	tasks := infra.Tasks
+	taskTile := metriccard.NewModel(m.ctx, "tasks", "count", tileW)
+	taskTile.SetValue(float64(tasks.After), float64(max(tasks.After, tasks.Before, 1)))
+	taskTile.SetDelta(fmt.Sprintf("%d\u2192%d", tasks.Before, tasks.After))
+	if tasks.After >= tasks.Before {
+		taskTile.SetSeverity(metriccard.SeverityOK)
+	} else {
+		taskTile.SetSeverity(metriccard.SeverityWarn)
+	}
+	tiles = append(tiles, taskTile.View())
+
+	// ASG tile (count variant)
+	asg := infra.ASG
+	asgTile := metriccard.NewModel(m.ctx, "asg", "count", tileW)
+	asgTile.SetValue(float64(asg.After), float64(max(asg.After, asg.Before, 1)))
+	asgTile.SetDelta(fmt.Sprintf("%d\u2192%d", asg.Before, asg.After))
+	if asg.After >= asg.Before {
+		asgTile.SetSeverity(metriccard.SeverityOK)
+	} else {
+		asgTile.SetSeverity(metriccard.SeverityWarn)
+	}
+	tiles = append(tiles, asgTile.View())
+
+	return renderTileGrid(tiles, tilesPerRow)
+}
+
+// metricValues extracts float64 values from metrics by ID.
+func (m Model) metricValues(id string) []float64 {
+	for _, mr := range m.metrics {
+		if mr.ID == id {
+			return mr.Values
+		}
+	}
+	return nil
 }
