@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
@@ -27,7 +26,7 @@ type Model struct {
 // NewModel creates a header.
 func NewModel(ctx *tuictx.ProgramContext, app, env, phase string) Model {
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
-	s.Style = lipgloss.NewStyle().Foreground(ctx.Theme.HeaderText)
+	s.Style = ctx.Styles.Header.Context
 	return Model{ctx: ctx, app: app, env: env, phase: phase, spinner: s}
 }
 

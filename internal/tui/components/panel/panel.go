@@ -154,10 +154,7 @@ func (m Model) View() string {
 
 	var body string
 	if m.child != nil {
-		childView := m.child.View()
-		// Use viewport for scrolling: refresh content from child on each render
-		m.viewport.SetContent(childView)
-		body = m.viewport.View()
+		body = m.child.View()
 	} else {
 		body = m.viewport.View()
 	}

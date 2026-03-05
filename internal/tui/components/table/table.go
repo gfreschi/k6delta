@@ -99,7 +99,7 @@ func (m Model) View() string {
 				align = col.Align
 			}
 
-			cellContent := lipgloss.NewStyle().Width(col.Width).Align(align).Render(val)
+			cellContent := s.Table.Cell.Width(col.Width).Align(align).Render(val)
 
 			if m.cellStyle != nil {
 				cells = append(cells, m.cellStyle(i, j, val).Render(cellContent))
