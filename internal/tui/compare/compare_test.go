@@ -169,3 +169,49 @@ func TestCompareModel_goldenStacked(t *testing.T) {
 	out := model.View()
 	golden.RequireEqualNamed(t, "TestCompareModel_goldenStacked", []byte(out))
 }
+
+func TestCompareModel_goldenSideBySide(t *testing.T) {
+	pathA := filepath.Join("..", "..", "report", "testdata", "report-a.json")
+	pathB := filepath.Join("..", "..", "report", "testdata", "report-b.json")
+
+	m := NewModel(pathA, pathB)
+
+	// Set terminal size for wide layout (150x40) to enable diff mode
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 150, Height: 40})
+
+	initCmd := model.(Model).Init()
+	if initCmd != nil {
+		msg := initCmd()
+		model, _ = model.Update(msg)
+	}
+
+	// Enable diff mode via d key
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+
+	out := model.View()
+	golden.RequireEqualNamed(t, "TestCompareModel_goldenSideBySide", []byte(out))
+}
+
+func TestCompareModel_goldenDrillDown(t *testing.T) {
+	pathA := filepath.Join("..", "..", "report", "testdata", "report-a.json")
+	pathB := filepath.Join("..", "..", "report", "testdata", "report-b.json")
+
+	m := NewModel(pathA, pathB)
+
+	// Set terminal size for split layout
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	initCmd := model.(Model).Init()
+	if initCmd != nil {
+		msg := initCmd()
+		model, _ = model.Update(msg)
+	}
+
+	// Press Enter to trigger drill-down on focused panel (k6)
+	model, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	out := model.View()
+	golden.RequireEqualNamed(t, "TestCompareModel_goldenDrillDown", []byte(out))
+}
