@@ -255,3 +255,35 @@ func TestInitRefusesOverwrite(t *testing.T) {
 		t.Errorf("expected 'already exists' error:\n%s", out)
 	}
 }
+
+func TestDemoListScenarios(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "demo", "--list")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("demo --list failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "happy-path") {
+		t.Errorf("expected happy-path in output, got: %s", output)
+	}
+	if !strings.Contains(output, "cascade-failure") {
+		t.Errorf("expected cascade-failure in output, got: %s", output)
+	}
+}
+
+func TestDemoHelpFlag(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "demo", "--help")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("demo --help failed: %v\n%s", err, out)
+	}
+	output := string(out)
+	if !strings.Contains(output, "--scenario") {
+		t.Errorf("expected --scenario flag in help, got: %s", output)
+	}
+	if !strings.Contains(output, "--speed") {
+		t.Errorf("expected --speed flag in help, got: %s", output)
+	}
+}

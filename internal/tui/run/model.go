@@ -130,6 +130,11 @@ type Model struct {
 	cpuTrend    trendline.Model
 	memTrend    trendline.Model
 	reservTrend trendline.Model
+
+	// Demo mode
+	demoMode     bool
+	demoSpeed    float64
+	demoScenario string
 }
 
 type authOKMsg struct{}
@@ -207,6 +212,25 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		memTrend:           trendline.NewModel(ctx, 30, 1),
 		reservTrend:        trendline.NewModel(ctx, 30, 1),
 	}
+}
+
+// NewDemoModel creates a Model for demo mode with fake k6 streaming.
+// It uses the mock provider and generates synthetic k6 data points.
+func NewDemoModel(app config.ResolvedApp, prov provider.InfraProvider, speed float64, scenario string, verdictCfg config.VerdictConfig) Model {
+	m := NewModel(app, prov, "", false, verdictCfg)
+	m.demoMode = true
+	m.demoSpeed = speed
+	m.demoScenario = scenario
+	m.streamingSupported = true
+	m.stepper = stepper.NewModel(m.ctx,
+		"Mock credentials",
+		"Pre-snapshot",
+		"Running demo",
+		"Post-snapshot",
+		"Analysis",
+		"Report",
+	)
+	return m
 }
 
 func (m Model) Init() tea.Cmd {
@@ -371,9 +395,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				{Key: "g", Action: "graphs"},
 				{Key: "a", Action: "abort"},
 			})
+			var k6Cmd tea.Cmd
+			if m.demoMode {
+				k6Cmd = m.runK6Demo()
+			} else {
+				k6Cmd = m.runK6Streaming(k6Ctx)
+			}
 			return m, tea.Batch(
 				flashCmd,
-				m.runK6Streaming(k6Ctx),
+				k6Cmd,
 				m.waitForK6Point(),
 				infraPollCmd(context.Background(), m.provider, 15*time.Second),
 			)
@@ -627,9 +657,12 @@ func (m Model) buildReport() tea.Cmd {
 		r.ScalingActivities = m.activities
 		r.AlarmHistory = m.activities.Alarms
 
-		reportPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-report.json")
-		if err := report.WriteReport(r, reportPath); err != nil {
-			return errMsg{err: fmt.Errorf("write report: %w", err)}
+		var reportPath string
+		if m.app.ResultsDir != "" {
+			reportPath = filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-report.json")
+			if err := report.WriteReport(r, reportPath); err != nil {
+				return errMsg{err: fmt.Errorf("write report: %w", err)}
+			}
 		}
 
 		return reportMsg{report: r, path: reportPath}
@@ -1300,6 +1333,20 @@ func (m Model) runK6Streaming(k6Ctx context.Context) tea.Cmd {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("k6 streaming: %w", err)}
 		}
+		result.StartTime = startTime
+		return k6DoneMsg{result: result}
+	}
+}
+
+func (m Model) runK6Demo() tea.Cmd {
+	ch := m.k6PointChan
+	speed := m.demoSpeed
+	scenario := m.demoScenario
+	startTime := m.startTime
+	duration := 30 * time.Second
+
+	return func() tea.Msg {
+		result := k6.FakeStream(duration, speed, scenario, ch)
 		result.StartTime = startTime
 		return k6DoneMsg{result: result}
 	}

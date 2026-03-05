@@ -28,6 +28,7 @@ func main() {
 	rootCmd.AddCommand(cli.NewAnalyzeCmd())
 	rootCmd.AddCommand(cli.NewCompareCmd())
 	rootCmd.AddCommand(cli.NewInitCmd())
+	rootCmd.AddCommand(cli.NewDemoCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		var exitErr *cli.ExitError
