@@ -1,9 +1,13 @@
 package comparetui
 
 import (
+	"path/filepath"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/gfreschi/k6delta/internal/report"
+	"github.com/gfreschi/k6delta/internal/tui/golden"
 )
 
 func TestParsePctChange(t *testing.T) {
@@ -123,4 +127,45 @@ func TestSortedRows(t *testing.T) {
 	if rows[0].Metric != "p95" {
 		t.Error("original slice was mutated by sortedRows")
 	}
+}
+
+func TestCompareModel_goldenSplit(t *testing.T) {
+	pathA := filepath.Join("..", "..", "report", "testdata", "report-a.json")
+	pathB := filepath.Join("..", "..", "report", "testdata", "report-b.json")
+
+	m := NewModel(pathA, pathB)
+
+	// Set terminal size for split layout (>=120)
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Load reports via Init command
+	initCmd := model.(Model).Init()
+	if initCmd != nil {
+		msg := initCmd()
+		model, _ = model.Update(msg)
+	}
+
+	out := model.View()
+	golden.RequireEqual(t, []byte(out))
+}
+
+func TestCompareModel_goldenStacked(t *testing.T) {
+	pathA := filepath.Join("..", "..", "report", "testdata", "report-a.json")
+	pathB := filepath.Join("..", "..", "report", "testdata", "report-b.json")
+
+	m := NewModel(pathA, pathB)
+
+	// Set terminal size for stacked layout (80x24)
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	initCmd := model.(Model).Init()
+	if initCmd != nil {
+		msg := initCmd()
+		model, _ = model.Update(msg)
+	}
+
+	out := model.View()
+	golden.RequireEqualNamed(t, "TestCompareModel_goldenStacked", []byte(out))
 }
