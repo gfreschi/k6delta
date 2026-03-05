@@ -38,7 +38,7 @@ func New(app config.ResolvedApp, project string) (*Provider, error) {
 	if project == "" {
 		return nil, fmt.Errorf("compose_project is required for docker-compose provider")
 	}
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("create docker client: %w", err)
 	}

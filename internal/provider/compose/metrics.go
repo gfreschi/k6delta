@@ -54,7 +54,7 @@ func collectContainerStats(ctx context.Context, cli containerStatter, containerI
 	if err != nil {
 		return containerStat{}, fmt.Errorf("container stats: %w", err)
 	}
-	defer statsResult.Body.Close()
+	defer func() { _ = statsResult.Body.Close() }()
 
 	var statsResp container.StatsResponse
 	if err := json.NewDecoder(statsResult.Body).Decode(&statsResp); err != nil {

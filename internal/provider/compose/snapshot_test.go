@@ -62,7 +62,9 @@ func TestTakeSnapshot_progressCallback(t *testing.T) {
 			called = true
 		},
 	}
-	p.takeSnapshotWithClient(context.Background(), mock)
+	if _, err := p.takeSnapshotWithClient(context.Background(), mock); err != nil {
+		t.Fatalf("takeSnapshotWithClient error: %v", err)
+	}
 	if !called {
 		t.Error("expected progress callback to be called")
 	}

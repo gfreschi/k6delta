@@ -140,7 +140,9 @@ func TestSetOnProgress(t *testing.T) {
 	p.SetOnProgress(func(id string, current, total int) {
 		called = true
 	})
-	p.TakeSnapshot(context.Background())
+	if _, err := p.TakeSnapshot(context.Background()); err != nil {
+		t.Fatalf("TakeSnapshot error: %v", err)
+	}
 	if !called {
 		t.Error("progress callback not called")
 	}
