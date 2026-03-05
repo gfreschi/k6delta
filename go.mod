@@ -7,7 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.10
 	github.com/aws/aws-sdk-go-v2/service/applicationautoscaling v1.41.11
-	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.64.1
+	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.64.2
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.55.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.73.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.54.7
@@ -22,8 +22,8 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.18 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.18 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.18 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.19 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.18 // indirect
