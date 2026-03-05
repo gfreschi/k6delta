@@ -97,9 +97,11 @@ type OverlayStyles struct {
 
 // TimelineStyles for event timeline entries.
 type TimelineStyles struct {
-	Alarm    lipgloss.Style
-	Scaling  lipgloss.Style
-	Resolved lipgloss.Style
+	Alarm     lipgloss.Style
+	Scaling   lipgloss.Style
+	Resolved  lipgloss.Style
+	Lane      lipgloss.Style
+	Threshold lipgloss.Style
 }
 
 // StatusBarStyles for the bottom status bar.
@@ -187,9 +189,11 @@ func InitStyles(t theme.Theme) Styles {
 			BorderError: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.TileBorderError),
 		},
 		Timeline: TimelineStyles{
-			Alarm:    lipgloss.NewStyle().Foreground(t.TimelineAlarm),
-			Scaling:  lipgloss.NewStyle().Foreground(t.TimelineScaling),
-			Resolved: lipgloss.NewStyle().Foreground(t.TimelineResolved),
+			Alarm:     lipgloss.NewStyle().Foreground(t.TimelineAlarm),
+			Scaling:   lipgloss.NewStyle().Foreground(t.TimelineScaling),
+			Resolved:  lipgloss.NewStyle().Foreground(t.TimelineResolved),
+			Lane:      lipgloss.NewStyle().Foreground(t.FaintText),
+			Threshold: lipgloss.NewStyle().Foreground(t.WarningText).Faint(true),
 		},
 		StatusBar: StatusBarStyles{
 			Root:  lipgloss.NewStyle().Foreground(t.FaintText),

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,6 +16,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	"github.com/gfreschi/k6delta/internal/tui/components/timechart"
+	"github.com/gfreschi/k6delta/internal/tui/components/timeline"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	"github.com/gfreschi/k6delta/internal/verdict"
 )
@@ -172,7 +174,7 @@ func (m *Model) initDashboard() {
 	m.infraPanel.SetContent(m.renderInfraTileGrid())
 
 	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, bottomH)
-	m.eventsPanel.SetContent(m.renderEventsList())
+	m.eventsPanel.SetContent(m.renderEventsTimeline())
 
 	m.focusMgr = focus.New(4)
 	m.k6Panel.SetFocused(true)
@@ -394,6 +396,90 @@ func (m Model) renderEventsList() string {
 		return "No scaling events recorded"
 	}
 	return strings.Join(lines, "\n")
+}
+
+// renderEventsTimeline renders a multi-lane timeline for the events panel.
+func (m Model) renderEventsTimeline() string {
+	if m.report == nil {
+		return m.renderEventsList()
+	}
+
+	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*55/100
+	innerW := eventsW - 4
+
+	tl := timeline.NewModel(m.ctx, m.startTime, m.endTime, innerW)
+
+	// CPU lane
+	if m.report.Infrastructure != nil {
+		if cpu := m.report.Infrastructure.ServiceCPU; cpu != nil && cpu.Peak != nil {
+			tl.AddLane(timeline.Lane{
+				Label:     "cpu",
+				Values:    m.metricValues("service_cpu"),
+				Peak:      *cpu.Peak,
+				Unit:      "%",
+				Threshold: 90,
+			})
+		}
+		if mem := m.report.Infrastructure.ServiceMemory; mem != nil && mem.Peak != nil {
+			tl.AddLane(timeline.Lane{
+				Label:  "mem",
+				Values: m.metricValues("service_memory"),
+				Peak:   *mem.Peak,
+				Unit:   "%",
+			})
+		}
+	}
+
+	// RPS lane
+	rpsValues := m.metricValues("alb_requests_per_target")
+	if len(rpsValues) > 0 {
+		rpsMax := 0.0
+		for _, v := range rpsValues {
+			if v > rpsMax {
+				rpsMax = v
+			}
+		}
+		tl.AddLane(timeline.Lane{
+			Label:  "rps",
+			Values: rpsValues,
+			Peak:   rpsMax,
+			Unit:   "/s",
+		})
+	}
+
+	// Scaling events
+	for _, sa := range m.activities.ServiceScaling {
+		t, err := time.Parse(time.RFC3339, sa.Time)
+		if err != nil {
+			continue
+		}
+		tl.AddEvent(timeline.Event{
+			Start: t,
+			End:   t.Add(30 * time.Second),
+			Type:  timeline.EventScaling,
+			Label: "scale",
+		})
+	}
+
+	// Alarm events
+	for _, alarm := range m.activities.Alarms {
+		t, err := time.Parse(time.RFC3339, alarm.Time)
+		if err != nil {
+			continue
+		}
+		evType := timeline.EventAlarm
+		if alarm.NewState == "OK" {
+			evType = timeline.EventResolved
+		}
+		tl.AddEvent(timeline.Event{
+			Start: t,
+			End:   t,
+			Type:  evType,
+			Label: alarm.AlarmName,
+		})
+	}
+
+	return tl.View()
 }
 
 func (m *Model) populateReportCharts() {
