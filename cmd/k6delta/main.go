@@ -1,5 +1,5 @@
-// k6delta wraps Grafana k6 load test execution with AWS infrastructure
-// monitoring and before/after comparison.
+// Command k6delta wraps Grafana k6 with AWS infrastructure monitoring
+// and before/after comparison.
 package main
 
 import (
