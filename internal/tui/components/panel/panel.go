@@ -28,6 +28,7 @@ type Model struct {
 	width          int
 	height         int
 	content        string
+	child          tea.Model // optional child model whose View() replaces content
 	focused        bool
 	viewport       viewport.Model
 	overflow       bool // true when content exceeds panel body height
@@ -49,8 +50,9 @@ func NewModel(ctx *tuictx.ProgramContext, title string, width, height int) Model
 	}
 }
 
-// SetContent sets the panel body content.
+// SetContent sets the panel body content. Clears any child model.
 func (m *Model) SetContent(content string) {
+	m.child = nil
 	m.content = content
 	m.viewport.SetContent(content)
 	lines := strings.Count(content, "\n")
@@ -58,6 +60,12 @@ func (m *Model) SetContent(content string) {
 		lines++
 	}
 	m.overflow = lines > m.viewport.Height
+}
+
+// SetModel sets a child tea.Model whose View() output is used as panel content.
+func (m *Model) SetModel(child tea.Model) {
+	m.child = child
+	m.content = ""
 }
 
 // SetTitle updates the panel title without recreating the model.
@@ -144,7 +152,15 @@ func (m Model) View() string {
 	titleStyle := m.ctx.Styles.Header.Root
 	header := titleStyle.Render(titleText)
 
-	body := m.viewport.View()
+	var body string
+	if m.child != nil {
+		childView := m.child.View()
+		// Use viewport for scrolling: refresh content from child on each render
+		m.viewport.SetContent(childView)
+		body = m.viewport.View()
+	} else {
+		body = m.viewport.View()
+	}
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	return style.Width(m.width).Render(inner)

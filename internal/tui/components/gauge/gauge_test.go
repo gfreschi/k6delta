@@ -84,3 +84,37 @@ func TestGaugeThresholdBoundary(t *testing.T) {
 		})
 	}
 }
+
+func TestGaugeAnimation(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	g := gauge.NewModel(ctx, "CPU", 20)
+
+	// Before SetValue, display should render no-data
+	noData := g.View()
+	if !strings.Contains(noData, "—") {
+		t.Fatal("expected no-data indicator before SetValue")
+	}
+
+	// SetValue snaps display to current (immediate mode)
+	g.SetValue(80.0, 100.0)
+	view := g.View()
+	if !strings.Contains(view, "80%") {
+		t.Fatalf("expected 80%% after SetValue, got: %s", view)
+	}
+
+	// After a TickMsg, Update should still work without error
+	g2, _ := g.Update(gauge.TickMsg{})
+	tickView := g2.View()
+	if len(tickView) == 0 {
+		t.Fatal("View() returned empty after tick")
+	}
+}
+
+func TestGaugeNoDataView(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	g := gauge.NewModel(ctx, "CPU", 20)
+	view := g.View()
+	if !strings.Contains(view, "░") {
+		t.Fatalf("expected faint bar in no-data view, got: %s", view)
+	}
+}

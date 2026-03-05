@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
@@ -96,6 +98,42 @@ func TestPanel_setTitle(t *testing.T) {
 		t.Error("old title should not appear after SetTitle")
 	}
 }
+
+func TestPanel_withChildModel(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	child := &testChild{content: "child content"}
+	p.SetModel(child)
+
+	view := p.View()
+	if !strings.Contains(view, "child content") {
+		t.Fatalf("expected child content in panel view, got: %s", view)
+	}
+}
+
+func TestPanel_setContentClearsChild(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+
+	child := &testChild{content: "child content"}
+	p.SetModel(child)
+	p.SetContent("string content")
+
+	view := p.View()
+	if strings.Contains(view, "child content") {
+		t.Fatal("expected child to be cleared after SetContent")
+	}
+	if !strings.Contains(view, "string content") {
+		t.Fatalf("expected string content in view, got: %s", view)
+	}
+}
+
+type testChild struct{ content string }
+
+func (c *testChild) Init() tea.Cmd                       { return nil }
+func (c *testChild) Update(tea.Msg) (tea.Model, tea.Cmd) { return c, nil }
+func (c *testChild) View() string                        { return c.content }
 
 func TestPanel_scrollUpWraps(t *testing.T) {
 	ctx := tuictx.New(120, 40)
