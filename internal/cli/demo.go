@@ -25,7 +25,7 @@ func NewDemoCmd() *cobra.Command {
 		Long:  "Demonstrates k6delta's full TUI experience using mock infrastructure data.\nNo AWS, Docker, or k6 binary needed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if list {
-				return printScenarios()
+				return printScenarios(cmd)
 			}
 
 			prov, err := mock.New(scenario)
@@ -56,15 +56,16 @@ func NewDemoCmd() *cobra.Command {
 	return cmd
 }
 
-func printScenarios() error {
+func printScenarios(cmd *cobra.Command) error {
+	w := cmd.OutOrStdout()
 	scenarios := mock.ListScenarios()
-	fmt.Println("Available scenarios:")
-	fmt.Println()
+	_, _ = fmt.Fprintln(w, "Available scenarios:")
+	_, _ = fmt.Fprintln(w)
 	for _, s := range scenarios {
-		fmt.Printf("  %-20s %s\n", s.Name, s.Description)
+		_, _ = fmt.Fprintf(w, "  %-20s %s\n", s.Name, s.Description)
 	}
-	fmt.Println()
-	fmt.Println("Usage: k6delta demo --scenario <name> [--speed <multiplier>]")
+	_, _ = fmt.Fprintln(w)
+	_, _ = fmt.Fprintln(w, "Usage: k6delta demo --scenario <name> [--speed <multiplier>]")
 	return nil
 }
 

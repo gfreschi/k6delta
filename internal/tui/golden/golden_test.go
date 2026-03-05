@@ -3,6 +3,7 @@ package golden
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,13 +14,11 @@ func TestRequireEqual_createsFileOnUpdate(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	original := testdataDir
-	testdataDir = dir
-	defer func() { testdataDir = original }()
 
-	RequireEqual(t, []byte("hello golden"))
+	RequireEqualIn(t, dir, []byte("hello golden"))
 
-	path := filepath.Join(dir, t.Name()+".golden")
+	name := strings.ReplaceAll(t.Name(), "/", "_")
+	path := filepath.Join(dir, name+".golden")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("golden file not created: %v", err)

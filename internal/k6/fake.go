@@ -23,7 +23,7 @@ func FakeStream(duration time.Duration, speed float64, scenario string, points c
 	}
 
 	realDuration := time.Duration(float64(duration) / speed)
-	tickInterval := 100 * time.Millisecond / time.Duration(speed)
+	tickInterval := time.Duration(float64(100*time.Millisecond) / speed)
 	if tickInterval < 10*time.Millisecond {
 		tickInterval = 10 * time.Millisecond
 	}

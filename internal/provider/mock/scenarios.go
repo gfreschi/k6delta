@@ -2,6 +2,7 @@ package mock
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gfreschi/k6delta/internal/provider"
@@ -171,12 +172,10 @@ func ListScenarios() []ScenarioInfo {
 }
 
 func scenarioNames() string {
-	names := ""
-	for _, info := range ListScenarios() {
-		if names != "" {
-			names += ", "
-		}
-		names += info.Name
+	infos := ListScenarios()
+	names := make([]string, len(infos))
+	for i, info := range infos {
+		names[i] = info.Name
 	}
-	return names
+	return strings.Join(names, ", ")
 }

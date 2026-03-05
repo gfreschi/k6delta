@@ -12,9 +12,7 @@ import (
 	"testing"
 )
 
-// testdataDir is the default directory for golden files.
-// Override in tests for isolation.
-var testdataDir = "testdata"
+const defaultTestdataDir = "testdata"
 
 func shouldUpdate() bool {
 	return os.Getenv("UPDATE_GOLDEN") != ""
@@ -25,23 +23,30 @@ func shouldUpdate() bool {
 func RequireEqual(t *testing.T, actual []byte) {
 	t.Helper()
 	name := strings.ReplaceAll(t.Name(), "/", "_")
-	requireGolden(t, name, actual)
+	requireGolden(t, defaultTestdataDir, name, actual)
 }
 
 // RequireEqualNamed compares actual output against a golden file with a custom name.
 func RequireEqualNamed(t *testing.T, name string, actual []byte) {
 	t.Helper()
 	safeName := strings.ReplaceAll(name, "/", "_")
-	requireGolden(t, safeName, actual)
+	requireGolden(t, defaultTestdataDir, safeName, actual)
 }
 
-func requireGolden(t *testing.T, name string, actual []byte) {
+// RequireEqualIn compares actual output against a golden file in the given directory.
+func RequireEqualIn(t *testing.T, dir string, actual []byte) {
+	t.Helper()
+	name := strings.ReplaceAll(t.Name(), "/", "_")
+	requireGolden(t, dir, name, actual)
+}
+
+func requireGolden(t *testing.T, dir, name string, actual []byte) {
 	t.Helper()
 
-	path := filepath.Join(testdataDir, name+".golden")
+	path := filepath.Join(dir, name+".golden")
 
 	if shouldUpdate() {
-		if err := os.MkdirAll(testdataDir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create testdata dir: %v", err)
 		}
 		if err := os.WriteFile(path, actual, 0o644); err != nil {

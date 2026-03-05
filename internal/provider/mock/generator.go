@@ -50,9 +50,11 @@ func Noise(base Generator, jitter float64) Generator {
 func Sample(g Generator, n int) []float64 {
 	values := make([]float64, n)
 	for i := range n {
-		t := float64(i) / float64(n-1)
+		var t float64
 		if n == 1 {
 			t = 0.5
+		} else {
+			t = float64(i) / float64(n-1)
 		}
 		values[i] = g(t)
 	}
