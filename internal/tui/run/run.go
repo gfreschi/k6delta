@@ -109,7 +109,6 @@ type Model struct {
 	k6Cancel           context.CancelFunc
 	rpsChart           streamchart.Model
 	latencyChart       streamchart.Model
-	liveSnapshot       provider.Snapshot
 	prevLiveSnapshot   provider.Snapshot
 	liveMetrics        []provider.MetricResult
 	infraError         error
@@ -460,7 +459,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.latencyChart.AddAnnotation(ann)
 			}
 			m.prevLiveSnapshot = msg.snapshot
-			m.liveSnapshot = msg.snapshot
 			m.liveMetrics = msg.metrics
 			m.updateTilesFromMetrics(msg.metrics)
 			m.updateTilesFromSnapshot(msg.snapshot)

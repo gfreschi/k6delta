@@ -24,11 +24,14 @@ const (
 	BreakpointWide    = 140 // extra-wide layout
 )
 
+// ExpandMode controls how panels share available space.
+type ExpandMode int
+
 // Panel expand modes.
 const (
-	ExpandNormal   = 0 // all panels visible at default sizes
-	ExpandExpanded = 1 // focused panel gets most height, others title-only
-	ExpandFull     = 2 // only focused panel renders
+	ExpandNormal   ExpandMode = iota // all panels visible at default sizes
+	ExpandExpanded                   // focused panel gets most height, others title-only
+	ExpandFull                       // only focused panel renders
 )
 
 // Minimum dimensions for panels and components.

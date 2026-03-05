@@ -34,12 +34,9 @@ func RenderHelp(ctx *tuictx.ProgramContext, groups []HelpGroup) string {
 	lines = append(lines, s.Common.FaintTextStyle.Render("  Press ? or esc to close"))
 
 	content := strings.Join(lines, "\n")
-	box := lipgloss.NewStyle().
+	box := s.Overlay.Box.
 		Width(min(w-4, 60)).
 		Height(min(h-2, len(lines)+2)).
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(s.Panel.Focused.GetBorderTopForeground()).
-		Padding(1, 2).
 		Render(content)
 
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)

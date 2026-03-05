@@ -31,7 +31,7 @@ type Model struct {
 	content        string
 	child          tea.Model // optional child model whose View() replaces content
 	focused        bool
-	expandMode     int
+	expandMode     constants.ExpandMode
 	viewport       viewport.Model
 	overflow       bool // true when content exceeds panel body height
 	transitioning  bool
@@ -84,7 +84,7 @@ func (m *Model) ResetExpand() {
 }
 
 // ExpandMode returns the current expand mode.
-func (m Model) ExpandMode() int { return m.expandMode }
+func (m Model) ExpandMode() constants.ExpandMode { return m.expandMode }
 
 // Content returns the current string content (empty if child model is set).
 func (m Model) Content() string { return m.content }

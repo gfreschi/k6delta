@@ -69,16 +69,19 @@ func (m *Model) updateTilesFromSnapshot(snap provider.Snapshot) {
 	}
 }
 
+func fmtElapsed(d time.Duration) string {
+	mins := int(d.Minutes())
+	secs := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm %ds", mins, secs)
+}
+
 func (m *Model) updateStatusBar() {
 	if !m.liveMode {
 		return
 	}
 	var items []statusbar.Item
 
-	elapsed := time.Since(m.startTime)
-	mins := int(elapsed.Minutes())
-	secs := int(elapsed.Seconds()) % 60
-	items = append(items, statusbar.Item{Label: "elapsed", Value: fmt.Sprintf("%dm %ds", mins, secs)})
+	items = append(items, statusbar.Item{Label: "elapsed", Value: fmtElapsed(time.Since(m.startTime))})
 
 	if m.liveRPSCount > 0 {
 		items = append(items, statusbar.Item{Label: "RPS", Value: fmt.Sprintf("%d", m.liveRPSCount)})
@@ -131,11 +134,8 @@ func (m Model) viewLiveHeader() ([]string, string) {
 	var sections []string
 	sections = append(sections, m.headerComp.View(), "")
 
-	elapsed := time.Since(m.startTime)
-	mins := int(elapsed.Minutes())
-	secs := int(elapsed.Seconds()) % 60
 	elapsedStr := m.ctx.Styles.Common.FaintTextStyle.Render(
-		fmt.Sprintf("  Elapsed: %dm %ds", mins, secs))
+		"  Elapsed: " + fmtElapsed(time.Since(m.startTime)))
 
 	return sections, elapsedStr
 }

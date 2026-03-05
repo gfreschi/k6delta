@@ -3,6 +3,7 @@ package streamchart
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NimbleMarkets/ntcharts/canvas/runes"
@@ -60,8 +61,12 @@ func (m *Model) Push(t time.Time, value float64) {
 }
 
 // AddAnnotation adds a marker to the chart timeline.
+// Only the most recent annotations are retained.
 func (m *Model) AddAnnotation(a Annotation) {
 	m.annotations = append(m.annotations, a)
+	if len(m.annotations) > maxAnnotations*2 {
+		m.annotations = m.annotations[len(m.annotations)-maxAnnotations:]
+	}
 }
 
 // Resize updates chart dimensions and redraws.
@@ -114,19 +119,5 @@ func (m Model) renderAnnotations() string {
 		parts = append(parts, marker)
 	}
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, joinWithSep(parts, "  ")...)
-}
-
-func joinWithSep(parts []string, sep string) []string {
-	if len(parts) == 0 {
-		return nil
-	}
-	result := make([]string, 0, len(parts)*2-1)
-	for i, p := range parts {
-		if i > 0 {
-			result = append(result, sep)
-		}
-		result = append(result, p)
-	}
-	return result
+	return strings.Join(parts, "  ")
 }

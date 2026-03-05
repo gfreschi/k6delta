@@ -17,11 +17,17 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
+// blockCharsRunes is the pre-computed rune slice for sparkline rendering.
+var blockCharsRunes = []rune(blockChars)
+
+// Severity controls the border color of a metric card tile.
+type Severity int
+
 // Severity levels for border coloring.
 const (
-	SeverityOK   = 0
-	SeverityWarn = 1
-	SeverityErr  = 2
+	SeverityOK   Severity = iota
+	SeverityWarn
+	SeverityErr
 )
 
 // Block sparkline characters (U+2581 through U+2588).
@@ -35,7 +41,7 @@ type Model struct {
 	width    int
 	value    float64
 	max      float64
-	severity int
+	severity Severity
 	hasData  bool
 	gauge    gauge.Model
 	values   []float64 // sparkline data points
@@ -99,7 +105,7 @@ func (m *Model) SetReportData(peak, avg float64, values []float64) {
 }
 
 // SetSeverity overrides the auto-computed severity.
-func (m *Model) SetSeverity(sev int) {
+func (m *Model) SetSeverity(sev Severity) {
 	m.severity = sev
 }
 
@@ -137,7 +143,7 @@ func (m Model) View() string {
 func (m Model) viewPercentage(border lipgloss.Style, innerW int) string {
 	// Value line: large percentage
 	valStr := fmt.Sprintf("%.0f%%", m.value)
-	valueLine := lipgloss.NewStyle().Bold(true).
+	valueLine := m.ctx.Styles.Common.BoldStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, valStr))
 
 	// Gauge bar
@@ -164,7 +170,7 @@ func (m Model) viewPercentage(border lipgloss.Style, innerW int) string {
 func (m Model) viewCount(border lipgloss.Style, innerW int) string {
 	// Value line
 	valStr := fmt.Sprintf("%.0f", m.value)
-	valueLine := lipgloss.NewStyle().Bold(true).
+	valueLine := m.ctx.Styles.Common.BoldStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, valStr))
 
 	// Delta arrows
@@ -199,7 +205,7 @@ func (m Model) viewRate(border lipgloss.Style, innerW int) string {
 	if m.unit != "" {
 		valStr += m.unit
 	}
-	valueLine := lipgloss.NewStyle().Bold(true).
+	valueLine := m.ctx.Styles.Common.BoldStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, valStr))
 
 	// Block sparkline
@@ -236,8 +242,7 @@ func (m Model) renderBlockSparkline(width int) string {
 		}
 	}
 
-	chars := []rune(blockChars)
-	numLevels := len(chars)
+	numLevels := len(blockCharsRunes)
 	var b strings.Builder
 
 	for _, v := range m.values {
@@ -248,7 +253,7 @@ func (m Model) renderBlockSparkline(width int) string {
 		if idx >= numLevels {
 			idx = numLevels - 1
 		}
-		b.WriteRune(chars[idx])
+		b.WriteRune(blockCharsRunes[idx])
 	}
 
 	return lipgloss.PlaceHorizontal(width, lipgloss.Center, b.String())
@@ -266,7 +271,7 @@ func (m Model) borderStyle() lipgloss.Style {
 	}
 }
 
-func computeSeverity(value, max float64) int {
+func computeSeverity(value, max float64) Severity {
 	if max <= 0 {
 		return SeverityOK
 	}

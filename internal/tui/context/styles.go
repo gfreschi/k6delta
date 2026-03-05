@@ -21,6 +21,7 @@ type Styles struct {
 	Tile      TileStyles
 	Timeline  TimelineStyles
 	StatusBar StatusBarStyles
+	Overlay   OverlayStyles
 }
 
 // ChartStyles for ntcharts chart configuration (axis, label, line).
@@ -87,6 +88,11 @@ type TileStyles struct {
 	BorderOK    lipgloss.Style
 	BorderWarn  lipgloss.Style
 	BorderError lipgloss.Style
+}
+
+// OverlayStyles for centered modal overlays (e.g., help screen).
+type OverlayStyles struct {
+	Box lipgloss.Style
 }
 
 // TimelineStyles for event timeline entries.
@@ -189,6 +195,12 @@ func InitStyles(t theme.Theme) Styles {
 			Root:  lipgloss.NewStyle().Foreground(t.FaintText),
 			Label: lipgloss.NewStyle().Bold(true).Foreground(t.SecondaryText),
 			Value: lipgloss.NewStyle().Foreground(t.PrimaryText),
+		},
+		Overlay: OverlayStyles{
+			Box: lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(t.FocusedBorder).
+				Padding(1, 2),
 		},
 		Delta: DeltaStyles{
 			Better:        lipgloss.NewStyle().Foreground(t.DeltaBetter),
