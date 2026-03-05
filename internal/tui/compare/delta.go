@@ -62,7 +62,10 @@ func (m Model) renderDeltaStrip() string {
 		return ""
 	}
 
-	tileW := constants.TileWidthNormal
+	tileW := constants.TileWidth(m.ctx.ContentWidth)
+	if tileW == 0 {
+		return ""
+	}
 	width := m.ctx.ContentWidth
 	tilesPerRow := max(width/(tileW+2), 1)
 

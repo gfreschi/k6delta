@@ -82,3 +82,16 @@ func CalcPanelHeights(totalHeight, topPct int) (int, int) {
 	bottomH := max(totalHeight-topH, 4)
 	return topH, bottomH
 }
+
+// TileWidth returns the appropriate tile width for a given content width.
+// Returns TileWidthNormal at >=120, TileWidthNarrow at >=80, 0 at <80 (skip tiles).
+func TileWidth(contentWidth int) int {
+	switch {
+	case contentWidth >= BreakpointSplit:
+		return TileWidthNormal
+	case contentWidth >= BreakpointStacked:
+		return TileWidthNarrow
+	default:
+		return 0
+	}
+}
