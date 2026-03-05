@@ -5,11 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/gfreschi/k6delta/internal/tui/common"
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
@@ -133,13 +133,13 @@ func (m Model) renderReport() string {
 
 	// Output files
 	sections = append(sections, "", "  Output Files")
-	k6SummaryPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")
-	if _, err := os.Stat(k6SummaryPath); err == nil {
-		sections = append(sections, fmt.Sprintf("  %-18s %s", "k6 summary:", k6SummaryPath))
+	if m.hasSummaryFile {
+		sections = append(sections, fmt.Sprintf("  %-18s %s", "k6 summary:",
+			filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")))
 	}
-	htmlPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")
-	if _, err := os.Stat(htmlPath); err == nil {
-		sections = append(sections, fmt.Sprintf("  %-18s %s", "HTML report:", htmlPath))
+	if m.hasHTMLFile {
+		sections = append(sections, fmt.Sprintf("  %-18s %s", "HTML report:",
+			filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")))
 	}
 	if m.reportPath != "" {
 		sections = append(sections, fmt.Sprintf("  %-18s %s", "Unified report:", m.reportPath))
@@ -168,13 +168,27 @@ func (m *Model) initDashboard() {
 	m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 
 	// Bottom row: infra (left) + events (right)
-	infraW := w * 55 / 100
+	infraW := w * constants.PanelSplitPct / 100
 	eventsW := w - infraW
 	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [3]", infraW, bottomH)
 	m.infraPanel.SetContent(m.renderInfraTileGrid())
 
 	m.eventsPanel = panel.NewModel(m.ctx, "Scaling Events [4]", eventsW, bottomH)
 	m.eventsPanel.SetContent(m.renderEventsTimeline())
+
+	// Pre-build cached render strings (data is immutable after run completes)
+	m.cachedVitalSigns = m.buildVitalSignsStrip()
+	m.cachedVerdictTile = m.buildVerdictTile()
+
+	// Check file existence once (avoid os.Stat in render path)
+	k6SummaryPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+"-summary.json")
+	if _, err := os.Stat(k6SummaryPath); err == nil {
+		m.hasSummaryFile = true
+	}
+	htmlPath := filepath.Join(m.app.ResultsDir, m.resultsPrefix+".html")
+	if _, err := os.Stat(htmlPath); err == nil {
+		m.hasHTMLFile = true
+	}
 
 	m.focusMgr = focus.New(4)
 	m.k6Panel.SetFocused(true)
@@ -201,7 +215,7 @@ func (m *Model) resizeDashboardPanels() {
 		m.k6Panel.SetDimensions(halfW, topH)
 		m.graphsPanel.SetDimensions(w-halfW, topH)
 
-		infraW := w * 55 / 100
+		infraW := w * constants.PanelSplitPct / 100
 		eventsW := w - infraW
 		m.infraPanel.SetDimensions(infraW, bottomH)
 		m.eventsPanel.SetDimensions(eventsW, bottomH)
@@ -365,9 +379,10 @@ func (m Model) renderK6SummaryGrid() string {
 		panelInnerW = m.ctx.ContentWidth/2 - 2
 	}
 	colWidth := panelInnerW / 2
+	colStyle := s.Common.MainTextStyle.Width(colWidth)
 	for _, r := range rows {
-		left := lipgloss.NewStyle().Width(colWidth).Render(r.left)
-		right := lipgloss.NewStyle().Width(colWidth).Render(r.right)
+		left := colStyle.Render(r.left)
+		right := colStyle.Render(r.right)
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, right))
 		b.WriteString("\n")
 	}
@@ -412,7 +427,7 @@ func (m Model) renderEventsTimeline() string {
 		return m.renderEventsList()
 	}
 
-	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*55/100
+	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*constants.PanelSplitPct/100
 	innerW := eventsW - 4
 
 	tl := timeline.NewModel(m.ctx, m.startTime, m.endTime, innerW)
@@ -455,37 +470,9 @@ func (m Model) renderEventsTimeline() string {
 		})
 	}
 
-	// Scaling events
-	for _, sa := range m.activities.ServiceScaling {
-		t, err := time.Parse(time.RFC3339, sa.Time)
-		if err != nil {
-			continue
-		}
-		tl.AddEvent(timeline.Event{
-			Start: t,
-			End:   t.Add(30 * time.Second),
-			Type:  timeline.EventScaling,
-			Label: "scale",
-		})
-	}
-
-	// Alarm events
-	for _, alarm := range m.activities.Alarms {
-		t, err := time.Parse(time.RFC3339, alarm.Time)
-		if err != nil {
-			continue
-		}
-		evType := timeline.EventAlarm
-		if alarm.NewState == "OK" {
-			evType = timeline.EventResolved
-		}
-		tl.AddEvent(timeline.Event{
-			Start: t,
-			End:   t,
-			Type:  evType,
-			Label: alarm.AlarmName,
-		})
-	}
+	// Scaling and alarm events
+	tl.AddScalingEvents(m.activities.ServiceScaling)
+	tl.AddAlarmEvents(m.activities.Alarms)
 
 	return tl.View()
 }
@@ -526,6 +513,10 @@ func (m Model) renderGraphsPanelContent() string {
 }
 
 func (m Model) renderVerdictTile() string {
+	return m.cachedVerdictTile
+}
+
+func (m Model) buildVerdictTile() string {
 	if m.computedVerdict == nil {
 		return ""
 	}
@@ -566,7 +557,7 @@ func (m Model) renderVerdictTile() string {
 
 func (m *Model) initHealthTiles() {
 	ctx := m.ctx
-	tileW := 12
+	tileW := constants.TileWidthNarrow
 
 	// CPU tile
 	cpuTile := metriccard.NewModel(ctx, "CPU", "%", tileW)
@@ -622,15 +613,20 @@ func (m Model) renderHealthMicroTiles() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, views...)
 }
 
-// renderVitalSignsStrip renders a row of KPI tiles above the report panel grid.
+// renderVitalSignsStrip returns the cached vital signs strip.
 func (m Model) renderVitalSignsStrip() string {
+	return m.cachedVitalSigns
+}
+
+// buildVitalSignsStrip builds a row of KPI tiles above the report panel grid.
+func (m Model) buildVitalSignsStrip() string {
 	if m.report == nil || m.report.K6 == nil {
 		return ""
 	}
 
 	k6 := m.report.K6
 	width := m.ctx.ContentWidth
-	tileW := 14
+	tileW := constants.TileWidthNormal
 	tilesPerRow := max(width/(tileW+2), 1)
 
 	var tiles []string
@@ -682,22 +678,9 @@ func (m Model) renderVitalSignsStrip() string {
 	if len(tiles) == 0 {
 		return ""
 	}
-	return renderTileGrid(tiles, tilesPerRow)
+	return common.RenderTileGrid(tiles, tilesPerRow)
 }
 
-// renderTileGrid arranges tile views into rows of tilesPerRow.
-func renderTileGrid(tiles []string, tilesPerRow int) string {
-	var rows []string
-	for i := 0; i < len(tiles); i += tilesPerRow {
-		end := i + tilesPerRow
-		if end > len(tiles) {
-			end = len(tiles)
-		}
-		row := lipgloss.JoinHorizontal(lipgloss.Top, tiles[i:end]...)
-		rows = append(rows, row)
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
 
 // renderInfraTileGrid renders infrastructure metrics as KPI tiles.
 func (m Model) renderInfraTileGrid() string {
@@ -706,8 +689,8 @@ func (m Model) renderInfraTileGrid() string {
 	}
 	infra := m.report.Infrastructure
 
-	tileW := 14
-	infraW := m.ctx.ContentWidth * 55 / 100
+	tileW := constants.TileWidthNormal
+	infraW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
 	innerW := infraW - 4 // panel borders + padding
 	tilesPerRow := max(innerW/(tileW+2), 1)
 
@@ -757,7 +740,7 @@ func (m Model) renderInfraTileGrid() string {
 	}
 	tiles = append(tiles, asgTile.View())
 
-	return renderTileGrid(tiles, tilesPerRow)
+	return common.RenderTileGrid(tiles, tilesPerRow)
 }
 
 // metricValues extracts float64 values from metrics by ID.

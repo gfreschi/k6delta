@@ -101,6 +101,12 @@ type Model struct {
 	hasRPSData         bool
 	hasLatencyData     bool
 
+	// Cached rendered strings (immutable after initDashboard)
+	cachedVitalSigns string
+	cachedVerdictTile string
+	hasSummaryFile    bool
+	hasHTMLFile       bool
+
 	// Live dashboard state
 	streamingSupported bool
 	liveMode           bool
@@ -183,13 +189,13 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		spinner:            s,
 		streamingSupported: canStream,
 		graphMode:          true,
-		rpsChart:     streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*55/100, 12),
-		latencyChart: streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*55/100, 12),
-		cpuTile:      metriccard.NewModel(ctx, "CPU", "%", 16),
-		memTile:      metriccard.NewModel(ctx, "Memory", "%", 16),
-		reservTile:   metriccard.NewModel(ctx, "Reserv", "%", 16),
-		tasksTile:    metriccard.NewModel(ctx, "Tasks", "count", 16),
-		asgTile:      metriccard.NewModel(ctx, "ASG", "count", 16),
+		rpsChart:     streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*constants.PanelSplitPct/100, 12),
+		latencyChart: streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*constants.PanelSplitPct/100, 12),
+		cpuTile:      metriccard.NewModel(ctx, "CPU", "%", constants.TileWidthWide),
+		memTile:      metriccard.NewModel(ctx, "Memory", "%", constants.TileWidthWide),
+		reservTile:   metriccard.NewModel(ctx, "Reserv", "%", constants.TileWidthWide),
+		tasksTile:    metriccard.NewModel(ctx, "Tasks", "count", constants.TileWidthWide),
+		asgTile:      metriccard.NewModel(ctx, "ASG", "count", constants.TileWidthWide),
 		statusBar:    statusbar.NewModel(ctx),
 	}
 }
@@ -330,7 +336,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		width := m.ctx.ContentWidth
 		switch {
 		case width >= constants.BreakpointSplit:
-			chartW := width*55/100 - 2
+			chartW := width*constants.PanelSplitPct/100 - 2
 			m.rpsChart.Resize(chartW, 12)
 			m.latencyChart.Resize(chartW, 12)
 		case width >= constants.BreakpointStacked:
@@ -395,7 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.liveMode = true
 
 			m.liveFocusMgr = focus.New(2)
-			leftW := m.ctx.ContentWidth * 55 / 100
+			leftW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
 			rightW := m.ctx.ContentWidth - leftW
 			panelH := m.ctx.ContentHeight - 8
 			m.liveGraphPanel = panel.NewModel(m.ctx, "Graphs [1]", leftW, panelH)

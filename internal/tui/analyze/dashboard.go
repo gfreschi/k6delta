@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/gfreschi/k6delta/internal/tui/common"
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
@@ -26,7 +27,7 @@ func (m *Model) initDashboard() {
 	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, topH)
 	m.statePanel.SetContent(m.renderStateContent())
 
-	metricsW := w * 55 / 100
+	metricsW := w * constants.PanelSplitPct / 100
 	eventsW := w - metricsW
 
 	m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, bottomH)
@@ -55,7 +56,7 @@ func (m *Model) resizeDashboardPanels() {
 	m.statePanel.SetDimensions(w, topH)
 
 	if w >= constants.BreakpointSplit {
-		metricsW := w * 55 / 100
+		metricsW := w * constants.PanelSplitPct / 100
 		eventsW := w - metricsW
 		m.metricsPanel.SetDimensions(metricsW, bottomH)
 		m.eventsPanel.SetDimensions(eventsW, bottomH)
@@ -150,7 +151,7 @@ func (m *Model) scrollFocusedPanel(dir int) {
 }
 
 func (m Model) renderStateContent() string {
-	tileW := 14
+	tileW := constants.TileWidthNormal
 	var tiles []string
 
 	// Tasks tile
@@ -177,8 +178,8 @@ func (m Model) renderMetricsContent() string {
 		return m.ctx.Styles.Common.FaintTextStyle.Render("No metrics available")
 	}
 
-	tileW := 14
-	metricsW := m.ctx.ContentWidth * 55 / 100
+	tileW := constants.TileWidthNormal
+	metricsW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
 	innerW := metricsW - 4
 	tilesPerRow := max(innerW/(tileW+2), 1)
 
@@ -192,7 +193,7 @@ func (m Model) renderMetricsContent() string {
 		tiles = append(tiles, t.View())
 	}
 
-	return renderTileGrid(tiles, tilesPerRow)
+	return common.RenderTileGrid(tiles, tilesPerRow)
 }
 
 func metricUnit(id string) string {
@@ -231,19 +232,6 @@ func metricShortLabel(id string) string {
 	}
 }
 
-// renderTileGrid arranges tile views into rows of tilesPerRow.
-func renderTileGrid(tiles []string, tilesPerRow int) string {
-	var rows []string
-	for i := 0; i < len(tiles); i += tilesPerRow {
-		end := i + tilesPerRow
-		if end > len(tiles) {
-			end = len(tiles)
-		}
-		row := lipgloss.JoinHorizontal(lipgloss.Top, tiles[i:end]...)
-		rows = append(rows, row)
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, rows...)
-}
 
 func (m Model) renderActivitiesContent() string {
 	var lines []string
@@ -294,7 +282,7 @@ func (m Model) renderActivitiesTimeline() string {
 		return m.renderActivitiesContent()
 	}
 
-	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*55/100
+	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*constants.PanelSplitPct/100
 	innerW := eventsW - 4
 
 	tl := timeline.NewModel(m.ctx, start, end, innerW)
@@ -318,37 +306,9 @@ func (m Model) renderActivitiesTimeline() string {
 		tl.AddLane(lane)
 	}
 
-	// Scaling events
-	for _, sa := range m.activities.ServiceScaling {
-		t, err := time.Parse(time.RFC3339, sa.Time)
-		if err != nil {
-			continue
-		}
-		tl.AddEvent(timeline.Event{
-			Start: t,
-			End:   t.Add(30 * time.Second),
-			Type:  timeline.EventScaling,
-			Label: "scale",
-		})
-	}
-
-	// Alarm events
-	for _, alarm := range m.activities.Alarms {
-		t, err := time.Parse(time.RFC3339, alarm.Time)
-		if err != nil {
-			continue
-		}
-		evType := timeline.EventAlarm
-		if alarm.NewState == "OK" {
-			evType = timeline.EventResolved
-		}
-		tl.AddEvent(timeline.Event{
-			Start: t,
-			End:   t,
-			Type:  evType,
-			Label: alarm.AlarmName,
-		})
-	}
+	// Scaling and alarm events
+	tl.AddScalingEvents(m.activities.ServiceScaling)
+	tl.AddAlarmEvents(m.activities.Alarms)
 
 	return tl.View()
 }

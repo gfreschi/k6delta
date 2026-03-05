@@ -6,8 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gfreschi/k6delta/internal/provider"
+	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
+
+// scalingEventDuration is the assumed visual duration for scaling events on the timeline.
+const scalingEventDuration = 30 * time.Second
 
 // EventType categorizes timeline events.
 type EventType int
@@ -68,6 +73,42 @@ func (m *Model) AddEvent(event Event) {
 	m.events = append(m.events, event)
 }
 
+// AddScalingEvents converts provider scaling activities into timeline events.
+func (m *Model) AddScalingEvents(activities []provider.ScalingActivity) {
+	for _, sa := range activities {
+		t, err := time.Parse(time.RFC3339, sa.Time)
+		if err != nil {
+			continue
+		}
+		m.events = append(m.events, Event{
+			Start: t,
+			End:   t.Add(scalingEventDuration),
+			Type:  EventScaling,
+			Label: "scale",
+		})
+	}
+}
+
+// AddAlarmEvents converts provider alarm events into timeline events.
+func (m *Model) AddAlarmEvents(alarms []provider.AlarmEvent) {
+	for _, alarm := range alarms {
+		t, err := time.Parse(time.RFC3339, alarm.Time)
+		if err != nil {
+			continue
+		}
+		evType := EventAlarm
+		if alarm.NewState == "OK" {
+			evType = EventResolved
+		}
+		m.events = append(m.events, Event{
+			Start: t,
+			End:   t,
+			Type:  evType,
+			Label: alarm.AlarmName,
+		})
+	}
+}
+
 // Resize updates the timeline width.
 func (m *Model) Resize(width int) {
 	m.width = width
@@ -110,7 +151,7 @@ func (m Model) View() string {
 func (m Model) renderTimeAxis() string {
 	s := m.ctx.Styles.Timeline
 	duration := m.end.Sub(m.start)
-	axisW := m.width - 8
+	axisW := m.width - constants.TimelineAxisReserve
 
 	tickCount := 5
 	if axisW < 40 {
@@ -138,7 +179,7 @@ func (m Model) renderTimeAxis() string {
 
 func (m Model) renderLane(lane Lane) string {
 	s := m.ctx.Styles.Timeline
-	sparkW := m.width - 20
+	sparkW := m.width - constants.TimelineLabelReserve
 
 	spark := renderBlockSparkline(lane.Values, sparkW, lane.Peak)
 	peakStr := fmt.Sprintf("%.0f%s peak", lane.Peak, lane.Unit)
@@ -152,7 +193,7 @@ func (m Model) renderLane(lane Lane) string {
 
 func (m Model) renderThresholdLine(lane Lane) string {
 	s := m.ctx.Styles.Timeline
-	lineW := m.width - 20
+	lineW := m.width - constants.TimelineLabelReserve
 	label := fmt.Sprintf("%.0f%s threshold", lane.Threshold, lane.Unit)
 	dashLen := (lineW - len(label)) / 2
 	if dashLen < 1 {
@@ -166,7 +207,7 @@ func (m Model) renderThresholdLine(lane Lane) string {
 
 func (m Model) renderEventLane() string {
 	s := m.ctx.Styles.Timeline
-	laneW := m.width - 20
+	laneW := m.width - constants.TimelineLabelReserve
 	if laneW < 1 {
 		laneW = 1
 	}

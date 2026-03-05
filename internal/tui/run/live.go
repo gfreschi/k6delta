@@ -109,7 +109,7 @@ func (m *Model) resizeLivePanels() {
 	panelH := m.ctx.ContentHeight - 8
 	switch {
 	case w >= constants.BreakpointSplit:
-		leftW := w * 55 / 100
+		leftW := w * constants.PanelSplitPct / 100
 		m.liveGraphPanel.SetDimensions(leftW, panelH)
 		m.liveInfraPanel.SetDimensions(w-leftW, panelH)
 	case w >= constants.BreakpointStacked:

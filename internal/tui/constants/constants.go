@@ -40,6 +40,22 @@ const (
 	MinTimelineWidth = 60
 )
 
+// Panel layout split ratio (percentage given to the left/infra panel).
+const PanelSplitPct = 55
+
+// Tile widths for KPI metric cards at different display contexts.
+const (
+	TileWidthNarrow = 12 // health micro-tiles (post-k6 summary strip)
+	TileWidthNormal = 14 // dashboard tiles (vital signs, infra, analyze)
+	TileWidthWide   = 16 // live dashboard tiles
+)
+
+// Timeline layout constants.
+const (
+	TimelineLabelReserve = 20 // space reserved for lane label + peak text
+	TimelineAxisReserve  = 8  // space reserved for axis padding
+)
+
 // Icons used across TUI components.
 const (
 	IconPending  = "◯"
