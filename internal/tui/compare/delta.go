@@ -69,7 +69,9 @@ func (m Model) renderDeltaStrip() string {
 	width := m.ctx.ContentWidth
 	tilesPerRow := max(width/(tileW+2), 1)
 
-	allRows := append(m.result.K6Rows, m.result.InfraRows...)
+	allRows := make([]report.ComparisonRow, 0, len(m.result.K6Rows)+len(m.result.InfraRows))
+	allRows = append(allRows, m.result.K6Rows...)
+	allRows = append(allRows, m.result.InfraRows...)
 	var tiles []string
 	for _, row := range allRows {
 		if row.Direction == "" {
@@ -200,7 +202,7 @@ func formatDeltaCell(row report.ComparisonRow, tiers common.DeltaStyleTiers, wid
 // --- Drill-Down Rendering ---
 
 func (m Model) renderDrillDown() string {
-	if m.result == nil || m.drillRow < 0 {
+	if m.result == nil || !m.drillActive {
 		return ""
 	}
 
@@ -215,26 +217,25 @@ func (m Model) renderDrillDown() string {
 	width := m.ctx.ContentWidth - 4
 	var lines []string
 
+	tiers := s.Delta.Tiers()
+	barWidth := max(width-20, 10)
 	for _, row := range rows {
 		label, valA, valB := formatK6Row(row)
-		pct := parsePctChange(row.Delta)
-		tiers := s.Delta.Tiers()
 		badge := formatDeltaCell(row, tiers, true)
 
 		hdr := s.Common.BoldStyle.Render(label) + "  " + badge
 		lines = append(lines, hdr)
 
 		// A/B values with bar visualization
-		barWidth := max(width-20, 10)
-		lines = append(lines, renderABBar("A", valA, pct, barWidth, s))
-		lines = append(lines, renderABBar("B", valB, -pct, barWidth, s))
+		lines = append(lines, renderABBar("A", valA, barWidth, s))
+		lines = append(lines, renderABBar("B", valB, barWidth, s))
 		lines = append(lines, "")
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-func renderABBar(label, value string, _ float64, barWidth int, s tuictx.Styles) string {
+func renderABBar(label, value string, barWidth int, s tuictx.Styles) string {
 	prefix := s.Common.FaintTextStyle.Render(fmt.Sprintf("  %s: %-12s", label, value))
 	fillLen := max(barWidth/4, 1)
 	bar := strings.Repeat("▓", fillLen)

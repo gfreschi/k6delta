@@ -43,8 +43,8 @@ type Model struct {
 	// Side-by-side diff mode (only at >=140 width)
 	diffMode bool
 
-	// Drill-down state (-1 = inactive)
-	drillRow int
+	// Drill-down active (Enter toggles, Escape exits)
+	drillActive bool
 }
 
 // NewModel creates a new compare TUI model for the two given report paths.
@@ -54,7 +54,7 @@ func NewModel(pathA, pathB string) Model {
 	ftr := footer.NewModel(ctx, []footer.KeyHint{
 		{Key: "q", Action: "quit"},
 	})
-	return Model{pathA: pathA, pathB: pathB, ctx: ctx, headerComp: hdr, footerComp: ftr, drillRow: -1}
+	return Model{pathA: pathA, pathB: pathB, ctx: ctx, headerComp: hdr, footerComp: ftr}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -139,15 +139,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cycleExpandFocusedPanel()
 				return m, nil
 			case key.Matches(msg, keys.Keys.Enter):
-				if m.drillRow < 0 {
-					m.drillRow = 0
+				if !m.drillActive {
+					// Drill-down requires full-expand to show A/B detail
+					m.drillActive = true
 					m.expandFocusedPanelFull()
 					m.refreshDrillPanel()
 				}
 				return m, nil
 			case key.Matches(msg, keys.Keys.Escape):
-				if m.drillRow >= 0 {
-					m.drillRow = -1
+				if m.drillActive {
+					m.drillActive = false
 					m.resetAllPanelExpand()
 					m.refreshPanels()
 					return m, nil
@@ -267,14 +268,11 @@ func (m *Model) initDashboard() {
 		{Key: "↑↓", Action: "scroll"},
 		{Key: "s", Action: "sort"},
 		{Key: "e", Action: "export"},
-		{Key: "?", Action: "help"},
 	}
 	if m.ctx.ContentWidth >= constants.BreakpointWide {
-		hints = append(hints[:len(hints)-1],
-			footer.KeyHint{Key: "d", Action: "diff"},
-			hints[len(hints)-1],
-		)
+		hints = append(hints, footer.KeyHint{Key: "d", Action: "diff"})
 	}
+	hints = append(hints, footer.KeyHint{Key: "?", Action: "help"})
 	m.footerComp.SetHints(hints)
 }
 
@@ -296,7 +294,7 @@ func (m *Model) refreshPanels() {
 }
 
 func (m *Model) refreshDrillPanel() {
-	if m.focusMgr == nil || m.drillRow < 0 {
+	if m.focusMgr == nil || !m.drillActive {
 		return
 	}
 	focused := m.focusMgr.Current()
