@@ -563,11 +563,3 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-// --- Commands ---
-
-
-// --- Helpers ---
-
-
-
-

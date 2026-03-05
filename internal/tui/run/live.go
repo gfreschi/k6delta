@@ -2,6 +2,7 @@ package runtui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -173,4 +174,44 @@ func (m Model) renderInfraLivePanel() string {
 		m.liveSnapshot.ASGInstances, m.liveSnapshot.ASGDesired))
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m Model) renderHealthBar() string {
+	s := m.ctx.Styles
+	var checks []string
+
+	// CPU check
+	cpuOK := true
+	for _, mr := range m.liveMetrics {
+		if mr.ID == "service_cpu" && mr.Peak != nil && *mr.Peak >= 90 {
+			cpuOK = false
+		}
+	}
+	if cpuOK {
+		checks = append(checks, s.Verdict.Pass.Render("✓ CPU < 90%"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ CPU ≥ 90%"))
+	}
+
+	// Task stability check
+	if m.liveSnapshot.TaskRunning >= m.preSnapshot.TaskRunning {
+		checks = append(checks, s.Verdict.Pass.Render("✓ Tasks stable"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ Tasks decreased"))
+	}
+
+	// 5xx check
+	has5xx := false
+	for _, mr := range m.liveMetrics {
+		if mr.ID == "alb_5xx" && mr.Peak != nil && *mr.Peak > 0 {
+			has5xx = true
+		}
+	}
+	if !has5xx {
+		checks = append(checks, s.Verdict.Pass.Render("✓ Zero 5xx"))
+	} else {
+		checks = append(checks, s.Verdict.Warn.Render("⚠ 5xx detected"))
+	}
+
+	return "  " + strings.Join(checks, "  ")
 }
