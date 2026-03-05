@@ -199,6 +199,31 @@ func TestInterpolateComposeProject(t *testing.T) {
 	}
 }
 
+func TestLoadMockConfig(t *testing.T) {
+	cfg, err := config.Load(filepath.Join("testdata", "mock.yaml"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Provider != "mock" {
+		t.Errorf("Provider = %q, want %q", cfg.Provider, "mock")
+	}
+	app := cfg.Apps["web"]
+	if app.MockScenario != "happy-path" {
+		t.Errorf("MockScenario = %q, want %q", app.MockScenario, "happy-path")
+	}
+}
+
+func TestInterpolateMockScenario(t *testing.T) {
+	app := config.AppConfig{
+		MockScenario: "cpu-spike",
+		TestFile:     "tests/${phase}.js",
+	}
+	resolved := config.Interpolate(app, "web", "staging", "smoke", "local", "results")
+	if resolved.MockScenario != "cpu-spike" {
+		t.Errorf("MockScenario = %q, want %q", resolved.MockScenario, "cpu-spike")
+	}
+}
+
 func TestDefaultConfig(t *testing.T) {
 	cfg := config.DefaultConfig()
 	if cfg.Provider != "ecs" {

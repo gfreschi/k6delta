@@ -1,0 +1,12 @@
+provider: mock
+region: local
+
+defaults:
+  env: local
+  phase: smoke
+  results_dir: results
+
+apps:
+  web:
+    mock_scenario: "happy-path"
+    test_file: "tests/${phase}.js"

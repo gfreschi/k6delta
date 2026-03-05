@@ -10,6 +10,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/provider/compose"
 	"github.com/gfreschi/k6delta/internal/provider/ecs"
+	"github.com/gfreschi/k6delta/internal/provider/mock"
 )
 
 // loadConfig loads config from the given path, or falls back to k6delta.yaml / defaults.
@@ -71,8 +72,10 @@ func createProvider(ctx context.Context, cfg *config.Config, resolved config.Res
 		return ecs.New(ctx, resolved)
 	case "docker-compose":
 		return compose.New(resolved, resolved.ComposeProject)
+	case "mock":
+		return mock.New(resolved.MockScenario)
 	default:
-		return nil, fmt.Errorf("unknown provider: %q (supported: ecs, docker-compose)", prov)
+		return nil, fmt.Errorf("unknown provider: %q (supported: ecs, docker-compose, mock)", prov)
 	}
 }
 
