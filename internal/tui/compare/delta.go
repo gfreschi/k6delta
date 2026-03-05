@@ -8,14 +8,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/report"
 	"github.com/gfreschi/k6delta/internal/tui/common"
+	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
 	"github.com/gfreschi/k6delta/internal/tui/components/overlay"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
+	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
 type sortMode int
@@ -53,14 +55,241 @@ func (m Model) exportComparison() tea.Cmd {
 	}
 }
 
+// --- Delta KPI Strip ---
+
+func (m Model) renderDeltaStrip() string {
+	if m.result == nil {
+		return ""
+	}
+
+	tileW := constants.TileWidthNormal
+	width := m.ctx.ContentWidth
+	tilesPerRow := max(width/(tileW+2), 1)
+
+	allRows := append(m.result.K6Rows, m.result.InfraRows...)
+	var tiles []string
+	for _, row := range allRows {
+		if row.Direction == "" {
+			continue
+		}
+		pct := math.Abs(parsePctChange(row.Delta))
+		label := metricShortName(row.Metric)
+		t := metriccard.NewModel(m.ctx, label, "%", tileW)
+		t.SetValue(pct, 50) // max 50% for severity scaling
+		if row.Direction == "better" {
+			t.SetSeverity(metriccard.SeverityOK)
+		} else if pct >= 5 {
+			t.SetSeverity(metriccard.SeverityErr)
+		} else {
+			t.SetSeverity(metriccard.SeverityWarn)
+		}
+		tiles = append(tiles, t.View())
+		if len(tiles) >= 6 {
+			break
+		}
+	}
+
+	if len(tiles) == 0 {
+		return ""
+	}
+	return common.RenderTileGrid(tiles, tilesPerRow)
+}
+
+func metricShortName(metric string) string {
+	switch metric {
+	case "p95":
+		return "p95"
+	case "p90":
+		return "p90"
+	case "error_rate":
+		return "err"
+	case "throughput":
+		return "rps"
+	case "checks_rate":
+		return "chk"
+	case "total_requests":
+		return "reqs"
+	case "service_cpu_peak":
+		return "cpu"
+	case "service_memory_peak":
+		return "mem"
+	case "alb_5xx":
+		return "5xx"
+	default:
+		if len(metric) > 4 {
+			return metric[:4]
+		}
+		return metric
+	}
+}
+
+// --- Regression Verdict Tile ---
+
+func (m Model) renderRegressionVerdict() string {
+	if m.result == nil {
+		return ""
+	}
+	sum := computeSummary(m.result)
+	s := m.ctx.Styles
+	width := m.ctx.ContentWidth
+
+	var word string
+	var borderStyle, textStyle lipgloss.Style
+
+	switch {
+	case sum.regressed == 0:
+		word = "N O   R E G R E S S I O N"
+		borderStyle = s.Tile.BorderOK
+		textStyle = s.Verdict.Pass
+	case sum.worstPct < 5 && sum.worstPct > -5:
+		word = "M I N O R   R E G R E S S I O N"
+		borderStyle = s.Tile.BorderWarn
+		textStyle = s.Verdict.Warn
+	default:
+		word = "R E G R E S S I O N"
+		borderStyle = s.Tile.BorderError
+		textStyle = s.Verdict.Fail
+	}
+
+	titleLine := textStyle.Render("  " + word)
+	countLine := s.Common.FaintTextStyle.Render(fmt.Sprintf("  %d improved · %d regressed · %d unchanged",
+		sum.improved, sum.regressed, sum.unchanged))
+
+	inner := lipgloss.JoinVertical(lipgloss.Left, titleLine, countLine)
+	return borderStyle.Width(width).Render(inner)
+}
+
+// --- Inline Delta Badges ---
+
+func formatDeltaCell(row report.ComparisonRow, tiers common.DeltaStyleTiers, wide bool) string {
+	if row.Direction == "" {
+		return constants.IconQuiet
+	}
+
+	pct := parsePctChange(row.Delta)
+	absPct := math.Abs(pct)
+	style := common.DeltaStyle(tiers, pct, isLowerBetter(row.Metric))
+
+	if absPct < 2 {
+		return style.Render(constants.IconQuiet)
+	}
+
+	var icon string
+	switch row.Direction {
+	case "better":
+		icon = constants.IconDone
+	case "worse":
+		icon = constants.IconWarning
+	}
+
+	text := row.Delta
+	if wide {
+		if pct > 0 {
+			text += " " + constants.IconUp
+		} else {
+			text += " " + constants.IconDown
+		}
+	}
+
+	return style.Render(icon + " " + text)
+}
+
+// --- Drill-Down Rendering ---
+
+func (m Model) renderDrillDown() string {
+	if m.result == nil || m.drillRow < 0 {
+		return ""
+	}
+
+	var rows []report.ComparisonRow
+	if m.focusMgr.Current() == 0 {
+		rows = m.sortedRows(m.result.K6Rows)
+	} else {
+		rows = m.result.InfraRows
+	}
+
+	s := m.ctx.Styles
+	width := m.ctx.ContentWidth - 4
+	var lines []string
+
+	for _, row := range rows {
+		label, valA, valB := formatK6Row(row)
+		pct := parsePctChange(row.Delta)
+		tiers := s.Delta.Tiers()
+		badge := formatDeltaCell(row, tiers, true)
+
+		hdr := s.Common.BoldStyle.Render(label) + "  " + badge
+		lines = append(lines, hdr)
+
+		// A/B values with bar visualization
+		barWidth := max(width-20, 10)
+		lines = append(lines, renderABBar("A", valA, pct, barWidth, s))
+		lines = append(lines, renderABBar("B", valB, -pct, barWidth, s))
+		lines = append(lines, "")
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func renderABBar(label, value string, _ float64, barWidth int, s tuictx.Styles) string {
+	prefix := s.Common.FaintTextStyle.Render(fmt.Sprintf("  %s: %-12s", label, value))
+	fillLen := max(barWidth/4, 1)
+	bar := strings.Repeat("▓", fillLen)
+	return prefix + " " + s.Common.FaintTextStyle.Render(bar)
+}
+
+// --- Side-by-Side Rendering ---
+
+func (m Model) renderSideBySide() string {
+	if m.result == nil {
+		return ""
+	}
+	width := m.ctx.ContentWidth
+	halfW := width / 2
+
+	// Left panel: Run A
+	leftTitle := m.ctx.Styles.Common.BoldStyle.Render(fmt.Sprintf("Run A: %s", m.result.RunA.Start))
+	leftTable := m.renderSingleRunTable(func(r report.ComparisonRow) string { return r.ValueA })
+
+	// Right panel: Run B
+	rightTitle := m.ctx.Styles.Common.BoldStyle.Render(fmt.Sprintf("Run B: %s", m.result.RunB.Start))
+	rightTable := m.renderSingleRunTable(func(r report.ComparisonRow) string { return r.ValueB })
+
+	leftCol := lipgloss.NewStyle().Width(halfW).Render(
+		lipgloss.JoinVertical(lipgloss.Left, leftTitle, leftTable))
+	rightCol := lipgloss.NewStyle().Width(width - halfW).Render(
+		lipgloss.JoinVertical(lipgloss.Left, rightTitle, rightTable))
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightCol)
+}
+
+func (m Model) renderSingleRunTable(valueFn func(report.ComparisonRow) string) string {
+	k6Sorted := m.sortedRows(m.result.K6Rows)
+	var rows []table.Row
+	for _, row := range k6Sorted {
+		label, _, _ := formatK6Row(row)
+		val := valueFn(row)
+		rows = append(rows, table.Row{label, val})
+	}
+	halfW := m.ctx.ContentWidth / 2
+	tbl := table.NewModel(m.ctx, []table.Column{
+		{Title: "Metric", Width: min(22, halfW-16)},
+		{Title: "Value", Width: 12, Align: lipgloss.Right},
+	})
+	tbl.SetRows(rows)
+	return tbl.View()
+}
+
 // --- Table Rendering ---
 
 func (m Model) renderK6Table() string {
 	k6Sorted := m.sortedRows(m.result.K6Rows)
+	tiers := m.ctx.Styles.Delta.Tiers()
+	wide := m.ctx.ContentWidth >= constants.BreakpointNarrow
 	var k6Rows []table.Row
 	for _, row := range k6Sorted {
 		label, valA, valB := formatK6Row(row)
-		delta := m.formatDelta(row.Delta, row.Direction, row.Metric)
+		delta := formatDeltaCell(row, tiers, wide)
 		k6Rows = append(k6Rows, table.Row{label, valA, valB, delta})
 	}
 	tbl := table.NewModel(m.ctx, []table.Column{
@@ -97,12 +326,15 @@ func (m Model) renderInfraTable() string {
 		}
 	}
 
+	tiers := m.ctx.Styles.Delta.Tiers()
+	wide := m.ctx.ContentWidth >= constants.BreakpointNarrow
+
 	var infraRows []table.Row
 	if cpuRow != nil && (cpuRow.ValueA != "-" || cpuRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ECS CPU peak", cpuRow.ValueA + "%", cpuRow.ValueB + "%", m.formatDelta(cpuRow.Delta, cpuRow.Direction, cpuRow.Metric)})
+		infraRows = append(infraRows, table.Row{"ECS CPU peak", cpuRow.ValueA + "%", cpuRow.ValueB + "%", formatDeltaCell(*cpuRow, tiers, wide)})
 	}
 	if memRow != nil && (memRow.ValueA != "-" || memRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ECS memory peak", memRow.ValueA + "%", memRow.ValueB + "%", m.formatDelta(memRow.Delta, memRow.Direction, memRow.Metric)})
+		infraRows = append(infraRows, table.Row{"ECS memory peak", memRow.ValueA + "%", memRow.ValueB + "%", formatDeltaCell(*memRow, tiers, wide)})
 	}
 	if tasksBefore != nil && tasksAfter != nil {
 		infraRows = append(infraRows, table.Row{"Tasks (before/after)",
@@ -115,7 +347,7 @@ func (m Model) renderInfraTable() string {
 			asgBefore.ValueB + "/" + asgAfter.ValueB, ""})
 	}
 	if alb5xxRow != nil && (alb5xxRow.ValueA != "-" || alb5xxRow.ValueB != "-") {
-		infraRows = append(infraRows, table.Row{"ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, m.formatDelta(alb5xxRow.Delta, alb5xxRow.Direction, alb5xxRow.Metric)})
+		infraRows = append(infraRows, table.Row{"ALB 5xx total", alb5xxRow.ValueA, alb5xxRow.ValueB, formatDeltaCell(*alb5xxRow, tiers, wide)})
 	}
 
 	if len(infraRows) == 0 {
@@ -191,52 +423,23 @@ func isLowerBetter(metric string) bool {
 	}
 }
 
-func (m Model) formatDelta(delta, direction, metric string) string {
-	if direction == "" {
-		return delta
-	}
-
-	pct := parsePctChange(delta)
-	tiers := m.ctx.Styles.Delta.Tiers()
-	style := common.DeltaStyle(tiers, pct, isLowerBetter(metric))
-
-	arrow := ""
-	switch {
-	case strings.HasPrefix(delta, "+"):
-		arrow = " " + constants.IconUp
-	case strings.HasPrefix(delta, "-"):
-		arrow = " " + constants.IconDown
-	}
-
-	// Only show direction word when terminal is wide enough
-	dirWord := ""
-	if m.ctx.ContentWidth >= constants.BreakpointNarrow {
-		switch direction {
-		case "better":
-			dirWord = " better"
-		case "worse":
-			dirWord = " worse"
-		}
-	}
-
-	return style.Render(delta + arrow + dirWord)
-}
-
 func (m Model) renderHelpOverlay() string {
 	return overlay.RenderHelp(m.ctx, []overlay.HelpGroup{
 		{Title: "Navigation", Keys: [][2]string{
 			{"q", "Quit"},
 			{"?", "Toggle help"},
-			{"esc", "Close help / collapse panel"},
+			{"esc", "Close help / close drill-down / collapse panel"},
 		}},
 		{Title: "Panels", Keys: [][2]string{
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-2", "Jump to panel"},
 			{"+", "Cycle expand (normal → expanded → full)"},
+			{"enter", "Drill into focused panel (A/B detail)"},
 			{"↑↓ / j k", "Scroll focused panel"},
 		}},
 		{Title: "Actions", Keys: [][2]string{
 			{"s", "Cycle sort (default → worst → best)"},
+			{"d", "Toggle side-by-side diff (≥140 wide)"},
 			{"e", "Export comparison JSON"},
 		}},
 	})
@@ -275,20 +478,3 @@ func computeSummary(result *report.ComparisonResult) comparisonSummary {
 	return sum
 }
 
-func (m Model) renderSummary() string {
-	sum := computeSummary(m.result)
-	s := m.ctx.Styles
-
-	improved := s.Common.SuccessStyle.Render(fmt.Sprintf("%d improved", sum.improved))
-	regressed := s.Common.ErrorStyle.Render(fmt.Sprintf("%d regressed", sum.regressed))
-	unchanged := s.Common.FaintTextStyle.Render(fmt.Sprintf("%d unchanged", sum.unchanged))
-
-	line1 := fmt.Sprintf("  %s %s %s %s %s", improved, constants.IconBullet, regressed, constants.IconBullet, unchanged)
-
-	if sum.worstMetric != "" {
-		worst := s.Delta.WorseSevere.Render(fmt.Sprintf("%s %+.1f%%", sum.worstMetric, sum.worstPct))
-		return line1 + "\n" + fmt.Sprintf("  Worst regression: %s", worst)
-	}
-
-	return line1
-}

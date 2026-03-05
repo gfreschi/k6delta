@@ -6,10 +6,12 @@ import "github.com/charmbracelet/bubbles/key"
 type CompareKeyMap struct {
 	Export key.Binding
 	Sort   key.Binding
+	Diff   key.Binding
 }
 
 // CompareKeys is the global compare-specific key binding set.
 var CompareKeys = CompareKeyMap{
 	Export: key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "export JSON")),
 	Sort:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sort")),
+	Diff:   key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "side-by-side")),
 }

@@ -1,24 +1,41 @@
-                                                                                   
-Compare: web load (staging)                                                        
-  Run A: 2026-03-02T10:00:00Z   Run B: 2026-03-03T10:00:00Z                        
-                                                                                   
-Metric                 Run A        Run B        Delta                             
-─────────────────────────────────────────────────────────────────────              
-p95 latency                   500ms        350ms             -30.0% ↓              
-p90 latency                   400ms        280ms             -30.0% ↓              
-Error rate                     0.01        0.005             -50.0% ↓              
-Throughput                     50/s         60/s             +20.0% ↑              
-Checks rate                    0.99        0.995              +0.5% ↑              
-Total requests                 5000         6000             +20.0% ↑              
-                                                                                   
-Infrastructure         Run A        Run B        Delta                             
-─────────────────────────────────────────────────────────────────────              
-ECS CPU peak                    70%          65%              -7.1% ↓              
-ECS memory peak                 55%          52%              -5.5% ↓              
-Tasks (before/after)            1/2          1/2                                   
-ASG (before/after)              1/1          1/1                                   
-ALB 5xx total                     0            2                  new              
-                                                                                   
-  8 improved · 0 regressed · 5 unchanged                                           
-                                                                                   
-  q quit · tab panel · 1-2 jump · + expand · ↑↓ scroll · s sort · e export · ? help
+                                                                                                 
+Compare: web load (staging)                                                                      
+  Run A: 2026-03-02T10:00:00Z   Run B: 2026-03-03T10:00:00Z                                      
+                                                                                                 
+╭──────────────╮╭──────────────╮╭──────────────╮╭──────────────╮                                 
+│    30%       ││    30%       ││    50%       ││    20%       │                                 
+│              ││              ││              ││              │                                 
+│▰▰▰▰▰▰░░░░    ││▰▰▰▰▰▰░░░░    ││▰▰▰▰▰▰▰▰▰▰    ││▰▰▰▰░░░░░░    │                                 
+│60%           ││60%           ││100%          ││40%           │                                 
+│    p95       ││    p90       ││    err       ││    rps       │                                 
+╰──────────────╯╰──────────────╯╰──────────────╯╰──────────────╯                                 
+╭──────────────╮╭──────────────╮                                                                 
+│     0%       ││    20%       │                                                                 
+│              ││              │                                                                 
+│░░░░░░░░░░  1%││▰▰▰▰░░░░░░    │                                                                 
+│    chk       ││40%           │                                                                 
+╰──────────────╯│    reqs      │                                                                 
+                ╰──────────────╯                                                                 
+Metric                 Run A        Run B        Delta                                           
+─────────────────────────────────────────────────────────────────────                            
+p95 latency                   500ms        350ms             ✓ -30.0%                            
+p90 latency                   400ms        280ms             ✓ -30.0%                            
+Error rate                     0.01        0.005             ✓ -50.0%                            
+Throughput                     50/s         60/s             ✓ +20.0%                            
+Checks rate                    0.99        0.995                    —                            
+Total requests                 5000         6000             ✓ +20.0%                            
+                                                                                                 
+Infrastructure         Run A        Run B        Delta                                           
+─────────────────────────────────────────────────────────────────────                            
+ECS CPU peak                    70%          65%              ✓ -7.1%                            
+ECS memory peak                 55%          52%              ✓ -5.5%                            
+Tasks (before/after)            1/2          1/2                                                 
+ASG (before/after)              1/1          1/1                                                 
+ALB 5xx total                     0            2                    —                            
+                                                                                                 
+╭──────────────────────────────────────────────────────────────────────────────╮                 
+│  N O   R E G R E S S I O N                                                   │                 
+│  8 improved · 0 regressed · 5 unchanged                                      │                 
+╰──────────────────────────────────────────────────────────────────────────────╯                 
+                                                                                                 
+  q quit · tab panel · 1-2 jump · + expand · enter drill · ↑↓ scroll · s sort · e export · ? help

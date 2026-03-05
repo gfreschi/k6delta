@@ -39,6 +39,12 @@ type Model struct {
 
 	// Help overlay
 	showHelp bool
+
+	// Side-by-side diff mode (only at >=140 width)
+	diffMode bool
+
+	// Drill-down state (-1 = inactive)
+	drillRow int
 }
 
 // NewModel creates a new compare TUI model for the two given report paths.
@@ -48,7 +54,7 @@ func NewModel(pathA, pathB string) Model {
 	ftr := footer.NewModel(ctx, []footer.KeyHint{
 		{Key: "q", Action: "quit"},
 	})
-	return Model{pathA: pathA, pathB: pathB, ctx: ctx, headerComp: hdr, footerComp: ftr}
+	return Model{pathA: pathA, pathB: pathB, ctx: ctx, headerComp: hdr, footerComp: ftr, drillRow: -1}
 }
 
 func (m Model) Init() tea.Cmd {
@@ -103,6 +109,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sort = (m.sort + 1) % 3
 			m.refreshPanels()
 			return m, nil
+		case key.Matches(msg, keys.CompareKeys.Diff):
+			if m.ctx.ContentWidth >= constants.BreakpointWide {
+				m.diffMode = !m.diffMode
+			}
+			return m, nil
 		}
 		if m.focusMgr != nil {
 			switch {
@@ -127,7 +138,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Keys.Expand):
 				m.cycleExpandFocusedPanel()
 				return m, nil
+			case key.Matches(msg, keys.Keys.Enter):
+				if m.drillRow < 0 {
+					m.drillRow = 0
+					m.expandFocusedPanelFull()
+					m.refreshDrillPanel()
+				}
+				return m, nil
 			case key.Matches(msg, keys.Keys.Escape):
+				if m.drillRow >= 0 {
+					m.drillRow = -1
+					m.resetAllPanelExpand()
+					m.refreshPanels()
+					return m, nil
+				}
 				if m.anyPanelExpanded() {
 					m.resetAllPanelExpand()
 					return m, nil
@@ -142,6 +166,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.k6Panel.UpdateContext(m.ctx)
 			m.infraPanel.UpdateContext(m.ctx)
 			m.resizePanels()
+		}
+		// Disable diff mode if terminal shrinks below threshold
+		if m.ctx.ContentWidth < constants.BreakpointWide {
+			m.diffMode = false
 		}
 	}
 	return m, nil
@@ -176,25 +204,37 @@ func (m Model) View() string {
 			s.Common.FaintTextStyle.Render(m.result.RunB.Start)),
 		"")
 
-	// Panels (responsive: panels at >=80, fallback text at <80)
+	// Delta KPI strip
+	deltaStrip := m.renderDeltaStrip()
+	if deltaStrip != "" {
+		sections = append(sections, deltaStrip)
+	}
+
+	// Panels or side-by-side
 	width := m.ctx.ContentWidth
 	if m.focusMgr != nil {
-		focused := m.focusMgr.Current()
-		panels := [2]panel.Model{m.k6Panel, m.infraPanel}
-
-		if panels[focused].ExpandMode() == constants.ExpandFull {
-			sections = append(sections, panels[focused].View())
-		} else if width >= constants.BreakpointStacked {
-			sections = append(sections, m.k6Panel.View())
-			sections = append(sections, m.infraPanel.View())
+		if m.diffMode && width >= constants.BreakpointWide {
+			sections = append(sections, m.renderSideBySide())
 		} else {
-			// Compact fallback: render table content without panel borders
-			sections = append(sections, m.renderK6Table(), "", m.renderInfraTable())
+			focused := m.focusMgr.Current()
+			panels := [2]panel.Model{m.k6Panel, m.infraPanel}
+
+			if panels[focused].ExpandMode() == constants.ExpandFull {
+				sections = append(sections, panels[focused].View())
+			} else if width >= constants.BreakpointStacked {
+				sections = append(sections, m.k6Panel.View())
+				sections = append(sections, m.infraPanel.View())
+			} else {
+				sections = append(sections, m.renderK6Table(), "", m.renderInfraTable())
+			}
 		}
 	}
 
-	// Summary + footer
-	sections = append(sections, "", m.renderSummary())
+	// Regression verdict tile + footer
+	verdictTile := m.renderRegressionVerdict()
+	if verdictTile != "" {
+		sections = append(sections, "", verdictTile)
+	}
 	if m.exportStatus != "" {
 		sections = append(sections, m.ctx.Styles.Common.SuccessStyle.Render("  "+m.exportStatus))
 	}
@@ -218,16 +258,24 @@ func (m *Model) initDashboard() {
 	m.focusMgr = focus.New(2)
 	m.k6Panel.SetFocused(true)
 
-	m.footerComp.SetHints([]footer.KeyHint{
+	hints := []footer.KeyHint{
 		{Key: "q", Action: "quit"},
 		{Key: "tab", Action: "panel"},
 		{Key: "1-2", Action: "jump"},
 		{Key: "+", Action: "expand"},
+		{Key: "enter", Action: "drill"},
 		{Key: "↑↓", Action: "scroll"},
 		{Key: "s", Action: "sort"},
 		{Key: "e", Action: "export"},
 		{Key: "?", Action: "help"},
-	})
+	}
+	if m.ctx.ContentWidth >= constants.BreakpointWide {
+		hints = append(hints[:len(hints)-1],
+			footer.KeyHint{Key: "d", Action: "diff"},
+			hints[len(hints)-1],
+		)
+	}
+	m.footerComp.SetHints(hints)
 }
 
 func (m *Model) resizePanels() {
@@ -247,6 +295,15 @@ func (m *Model) refreshPanels() {
 	m.infraPanel.SetContent(m.renderInfraTable())
 }
 
+func (m *Model) refreshDrillPanel() {
+	if m.focusMgr == nil || m.drillRow < 0 {
+		return
+	}
+	focused := m.focusMgr.Current()
+	panels := []*panel.Model{&m.k6Panel, &m.infraPanel}
+	panels[focused].SetContent(m.renderDrillDown())
+}
+
 func (m *Model) updatePanelFocus() tea.Cmd {
 	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
 	m.infraPanel.SetFocused(m.focusMgr.IsFocused(1))
@@ -258,6 +315,14 @@ func (m *Model) cycleExpandFocusedPanel() {
 	idx := m.focusMgr.Current()
 	if idx >= 0 && idx < len(panels) {
 		panels[idx].CycleExpand()
+	}
+}
+
+func (m *Model) expandFocusedPanelFull() {
+	panels := []*panel.Model{&m.k6Panel, &m.infraPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].SetExpandFull()
 	}
 }
 
