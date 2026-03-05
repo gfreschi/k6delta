@@ -2,13 +2,14 @@ package runtui
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/k6"
 	"github.com/gfreschi/k6delta/internal/provider"
+	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
+	"github.com/gfreschi/k6delta/internal/tui/components/statusbar"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 )
 
@@ -34,7 +35,7 @@ func (m *Model) handleK6Point(point k6.K6Point) {
 	}
 }
 
-func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
+func (m *Model) updateTilesFromMetrics(metrics []provider.MetricResult) {
 	for _, mr := range metrics {
 		if len(mr.Values) == 0 {
 			continue
@@ -42,21 +43,62 @@ func (m *Model) updateGaugesFromMetrics(metrics []provider.MetricResult) {
 		latest := mr.Values[len(mr.Values)-1]
 		switch mr.ID {
 		case "service_cpu":
-			m.cpuGauge.SetValue(latest, 100.0)
-			m.cpuTrend.Push(latest)
+			m.cpuTile.SetValue(latest, 100.0)
+			m.cpuTile.PushSparkline(latest)
 		case "service_memory":
-			m.memGauge.SetValue(latest, 100.0)
-			m.memTrend.Push(latest)
+			m.memTile.SetValue(latest, 100.0)
+			m.memTile.PushSparkline(latest)
 		case "capacity_provider_reservation":
-			m.reservGauge.SetValue(latest, 100.0)
-			m.reservTrend.Push(latest)
+			m.reservTile.SetValue(latest, 100.0)
+			m.reservTile.PushSparkline(latest)
 		}
 	}
 }
 
+func (m *Model) updateTilesFromSnapshot(snap provider.Snapshot) {
+	m.tasksTile.SetValue(float64(snap.TaskRunning), float64(max(snap.TaskDesired, 1)))
+	if m.preSnapshot.TaskRunning > 0 {
+		m.tasksTile.SetDelta(fmt.Sprintf("%d\u2192%d", m.preSnapshot.TaskRunning, snap.TaskRunning))
+		if snap.TaskRunning < m.preSnapshot.TaskRunning {
+			m.tasksTile.SetSeverity(metriccard.SeverityWarn)
+		}
+	}
+	m.asgTile.SetValue(float64(snap.ASGInstances), float64(max(snap.ASGDesired, 1)))
+	if m.preSnapshot.ASGInstances > 0 {
+		m.asgTile.SetDelta(fmt.Sprintf("%d\u2192%d", m.preSnapshot.ASGInstances, snap.ASGInstances))
+	}
+}
+
+func (m *Model) updateStatusBar() {
+	if !m.liveMode {
+		return
+	}
+	var items []statusbar.Item
+
+	elapsed := time.Since(m.startTime)
+	mins := int(elapsed.Minutes())
+	secs := int(elapsed.Seconds()) % 60
+	items = append(items, statusbar.Item{Label: "elapsed", Value: fmt.Sprintf("%dm %ds", mins, secs)})
+
+	if m.liveRPSCount > 0 {
+		items = append(items, statusbar.Item{Label: "RPS", Value: fmt.Sprintf("%d", m.liveRPSCount)})
+	}
+
+	for _, mr := range m.liveMetrics {
+		if mr.ID == "service_cpu" && len(mr.Values) > 0 {
+			latest := mr.Values[len(mr.Values)-1]
+			items = append(items, statusbar.Item{Label: "CPU", Value: fmt.Sprintf("%.0f%%", latest)})
+			break
+		}
+	}
+
+	m.statusBar.SetItems(items)
+}
+
 func (m *Model) updateLivePanelContent() {
 	m.liveGraphPanel.SetContent(m.viewLiveGraphs())
-	m.liveInfraPanel.SetContent(m.renderInfraLivePanel())
+	m.liveInfraPanel.SetContent(m.renderLiveInfraTiles())
+	m.updateStatusBar()
 }
 
 func (m *Model) resizeLivePanels() {
@@ -120,7 +162,10 @@ func (m Model) viewLiveSplit() string {
 	)
 
 	sections = append(sections, middle)
-	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
+	if sb := m.statusBar.View(); sb != "" {
+		sections = append(sections, "", sb)
+	}
+	sections = append(sections, "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -132,7 +177,10 @@ func (m Model) viewLiveStacked() string {
 
 	sections = append(sections, m.liveGraphPanel.View())
 	sections = append(sections, m.liveInfraPanel.View())
-	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
+	if sb := m.statusBar.View(); sb != "" {
+		sections = append(sections, "", sb)
+	}
+	sections = append(sections, "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -143,12 +191,15 @@ func (m Model) viewLiveFallback() string {
 	sections = append(sections, elapsedStr, "")
 
 	sections = append(sections, m.stepper.View())
-	sections = append(sections, "", m.renderHealthBar(), "", m.footerComp.View())
+	if sb := m.statusBar.View(); sb != "" {
+		sections = append(sections, "", sb)
+	}
+	sections = append(sections, "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
-func (m Model) renderInfraLivePanel() string {
+func (m Model) renderLiveInfraTiles() string {
 	s := m.ctx.Styles
 	var lines []string
 
@@ -157,61 +208,17 @@ func (m Model) renderInfraLivePanel() string {
 		lines = append(lines, s.Common.WarnStyle.Render("  Warning: "+m.infraError.Error()))
 	}
 	lines = append(lines, "")
-	lines = append(lines, m.cpuGauge.View())
-	lines = append(lines, m.cpuTrend.View())
-	lines = append(lines, m.memGauge.View())
-	lines = append(lines, m.memTrend.View())
-	lines = append(lines, m.reservGauge.View())
-	lines = append(lines, m.reservTrend.View())
-	lines = append(lines, "")
 
-	lines = append(lines, s.Common.BoldStyle.Render("Tasks"))
-	lines = append(lines, fmt.Sprintf("  Running: %d  Desired: %d",
-		m.liveSnapshot.TaskRunning, m.liveSnapshot.TaskDesired))
-	lines = append(lines, "")
-	lines = append(lines, s.Common.BoldStyle.Render("ASG"))
-	lines = append(lines, fmt.Sprintf("  Instances: %d  Desired: %d",
-		m.liveSnapshot.ASGInstances, m.liveSnapshot.ASGDesired))
+	// Top row: CPU, Memory, Reservation
+	topRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.cpuTile.View(), m.memTile.View(), m.reservTile.View())
+	lines = append(lines, topRow)
+
+	// Bottom row: Tasks, ASG
+	bottomRow := lipgloss.JoinHorizontal(lipgloss.Top,
+		m.tasksTile.View(), m.asgTile.View())
+	lines = append(lines, "", bottomRow)
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-func (m Model) renderHealthBar() string {
-	s := m.ctx.Styles
-	var checks []string
-
-	// CPU check
-	cpuOK := true
-	for _, mr := range m.liveMetrics {
-		if mr.ID == "service_cpu" && mr.Peak != nil && *mr.Peak >= 90 {
-			cpuOK = false
-		}
-	}
-	if cpuOK {
-		checks = append(checks, s.Verdict.Pass.Render("✓ CPU < 90%"))
-	} else {
-		checks = append(checks, s.Verdict.Warn.Render("⚠ CPU ≥ 90%"))
-	}
-
-	// Task stability check
-	if m.liveSnapshot.TaskRunning >= m.preSnapshot.TaskRunning {
-		checks = append(checks, s.Verdict.Pass.Render("✓ Tasks stable"))
-	} else {
-		checks = append(checks, s.Verdict.Warn.Render("⚠ Tasks decreased"))
-	}
-
-	// 5xx check
-	has5xx := false
-	for _, mr := range m.liveMetrics {
-		if mr.ID == "alb_5xx" && mr.Peak != nil && *mr.Peak > 0 {
-			has5xx = true
-		}
-	}
-	if !has5xx {
-		checks = append(checks, s.Verdict.Pass.Render("✓ Zero 5xx"))
-	} else {
-		checks = append(checks, s.Verdict.Warn.Render("⚠ 5xx detected"))
-	}
-
-	return "  " + strings.Join(checks, "  ")
-}

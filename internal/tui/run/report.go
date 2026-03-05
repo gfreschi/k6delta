@@ -11,6 +11,7 @@ import (
 
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
 	"github.com/gfreschi/k6delta/internal/tui/components/table"
 	"github.com/gfreschi/k6delta/internal/tui/components/timechart"
@@ -497,4 +498,62 @@ func (m Model) renderVerdictBar() string {
 		b.WriteString("\n  " + icon + " " + reason)
 	}
 	return b.String()
+}
+
+func (m *Model) initHealthTiles() {
+	ctx := m.ctx
+	tileW := 12
+
+	// CPU tile
+	cpuTile := metriccard.NewModel(ctx, "CPU", "%", tileW)
+	for _, mr := range m.metrics {
+		if mr.ID == "service_cpu" && mr.Peak != nil {
+			cpuTile.SetValue(*mr.Peak, 100)
+			break
+		}
+	}
+
+	// Tasks tile
+	tasksTile := metriccard.NewModel(ctx, "Tasks", "count", tileW)
+	tasksTile.SetValue(float64(m.postSnapshot.TaskRunning), float64(max(m.preSnapshot.TaskRunning, 1)))
+	if m.postSnapshot.TaskRunning < m.preSnapshot.TaskRunning {
+		tasksTile.SetSeverity(metriccard.SeverityWarn)
+	} else {
+		tasksTile.SetSeverity(metriccard.SeverityOK)
+	}
+	tasksTile.SetDelta(fmt.Sprintf("%d\u2192%d", m.preSnapshot.TaskRunning, m.postSnapshot.TaskRunning))
+
+	// 5xx tile
+	fivexxTile := metriccard.NewModel(ctx, "5xx", "count", tileW)
+	for _, mr := range m.metrics {
+		if mr.ID == "alb_5xx" && mr.Peak != nil {
+			fivexxTile.SetValue(*mr.Peak, 100)
+			if *mr.Peak > 0 {
+				fivexxTile.SetSeverity(metriccard.SeverityWarn)
+			} else {
+				fivexxTile.SetSeverity(metriccard.SeverityOK)
+			}
+			break
+		}
+	}
+
+	// p95 tile
+	p95Tile := metriccard.NewModel(ctx, "p95", "ms", tileW)
+	if m.report != nil && m.report.K6 != nil && m.report.K6.P95ms != nil {
+		p95Tile.SetValue(*m.report.K6.P95ms, 1000)
+	}
+
+	m.healthTiles = []metriccard.Model{cpuTile, tasksTile, fivexxTile, p95Tile}
+	m.healthTilesReady = true
+}
+
+func (m Model) renderHealthMicroTiles() string {
+	if !m.healthTilesReady || len(m.healthTiles) == 0 {
+		return ""
+	}
+	var views []string
+	for _, tile := range m.healthTiles {
+		views = append(views, tile.View())
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, views...)
 }
