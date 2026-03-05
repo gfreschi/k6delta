@@ -18,13 +18,13 @@ import (
 	"github.com/gfreschi/k6delta/internal/verdict"
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
-	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
+	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
+	"github.com/gfreschi/k6delta/internal/tui/components/statusbar"
 	"github.com/gfreschi/k6delta/internal/tui/components/streamchart"
-	"github.com/gfreschi/k6delta/internal/tui/components/timechart"
-	"github.com/gfreschi/k6delta/internal/tui/components/trendline"
 	"github.com/gfreschi/k6delta/internal/tui/components/stepper"
+	"github.com/gfreschi/k6delta/internal/tui/components/timechart"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 	"github.com/gfreschi/k6delta/internal/tui/keys"
@@ -109,10 +109,8 @@ type Model struct {
 	k6Cancel           context.CancelFunc
 	rpsChart           streamchart.Model
 	latencyChart       streamchart.Model
-	cpuGauge           gauge.Model
-	memGauge           gauge.Model
-	reservGauge        gauge.Model
 	liveSnapshot       provider.Snapshot
+	prevLiveSnapshot   provider.Snapshot
 	liveMetrics        []provider.MetricResult
 	infraError         error
 	liveRPSCount       int
@@ -123,10 +121,19 @@ type Model struct {
 	liveGraphPanel panel.Model
 	liveInfraPanel panel.Model
 
-	// Infra trend sparklines
-	cpuTrend    trendline.Model
-	memTrend    trendline.Model
-	reservTrend trendline.Model
+	// Live infra tiles (replacing gauge + trendline)
+	cpuTile    metriccard.Model
+	memTile    metriccard.Model
+	reservTile metriccard.Model
+	tasksTile  metriccard.Model
+	asgTile    metriccard.Model
+
+	// Status bar (live mode)
+	statusBar statusbar.Model
+
+	// Health micro-tiles (post-k6 summary)
+	healthTiles      []metriccard.Model
+	healthTilesReady bool
 
 	// Demo mode
 	demoMode     bool
@@ -177,14 +184,14 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		spinner:            s,
 		streamingSupported: canStream,
 		graphMode:          true,
-		rpsChart:           streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*55/100, 12),
-		latencyChart:       streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*55/100, 12),
-		cpuGauge:           gauge.NewModel(ctx, "CPU", 30),
-		memGauge:           gauge.NewModel(ctx, "Memory", 30),
-		reservGauge:        gauge.NewModel(ctx, "Reserv", 30),
-		cpuTrend:           trendline.NewModel(ctx, 30, 1),
-		memTrend:           trendline.NewModel(ctx, 30, 1),
-		reservTrend:        trendline.NewModel(ctx, 30, 1),
+		rpsChart:     streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*55/100, 12),
+		latencyChart: streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*55/100, 12),
+		cpuTile:      metriccard.NewModel(ctx, "CPU", "%", 16),
+		memTile:      metriccard.NewModel(ctx, "Memory", "%", 16),
+		reservTile:   metriccard.NewModel(ctx, "Reserv", "%", 16),
+		tasksTile:    metriccard.NewModel(ctx, "Tasks", "count", 16),
+		asgTile:      metriccard.NewModel(ctx, "ASG", "count", 16),
+		statusBar:    statusbar.NewModel(ctx),
 	}
 }
 
@@ -328,12 +335,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.rpsChart.Resize(width-2, 10)
 			m.latencyChart.Resize(width-2, 10)
 		}
-		m.cpuGauge.UpdateContext(m.ctx)
-		m.reservGauge.UpdateContext(m.ctx)
-		m.memGauge.UpdateContext(m.ctx)
-		m.cpuTrend.UpdateContext(m.ctx)
-		m.memTrend.UpdateContext(m.ctx)
-		m.reservTrend.UpdateContext(m.ctx)
+		m.cpuTile.UpdateContext(m.ctx)
+		m.memTile.UpdateContext(m.ctx)
+		m.reservTile.UpdateContext(m.ctx)
+		m.tasksTile.UpdateContext(m.ctx)
+		m.asgTile.UpdateContext(m.ctx)
+		m.statusBar.UpdateContext(m.ctx)
 		if m.liveFocusMgr != nil {
 			m.liveGraphPanel.UpdateContext(m.ctx)
 			m.liveInfraPanel.UpdateContext(m.ctx)
@@ -441,9 +448,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.infraError = msg.err
 		} else {
 			m.infraError = nil
+			// Detect scaling events for chart annotations
+			if m.prevLiveSnapshot.TaskRunning != 0 && msg.snapshot.TaskRunning != m.prevLiveSnapshot.TaskRunning {
+				label := fmt.Sprintf("scale %d\u2192%d", m.prevLiveSnapshot.TaskRunning, msg.snapshot.TaskRunning)
+				ann := streamchart.Annotation{
+					Time:  time.Now(),
+					Label: label,
+					Style: m.ctx.Styles.Timeline.Scaling,
+				}
+				m.rpsChart.AddAnnotation(ann)
+				m.latencyChart.AddAnnotation(ann)
+			}
+			m.prevLiveSnapshot = msg.snapshot
 			m.liveSnapshot = msg.snapshot
 			m.liveMetrics = msg.metrics
-			m.updateGaugesFromMetrics(msg.metrics)
+			m.updateTilesFromMetrics(msg.metrics)
+			m.updateTilesFromSnapshot(msg.snapshot)
 		}
 		if m.liveMode {
 			if m.liveFocusMgr != nil {
@@ -514,6 +534,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		flashCmd := m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
 		m.initDashboard()
+		m.initHealthTiles()
 		return m, flashCmd
 
 	case exportDoneMsg:
@@ -598,6 +619,9 @@ func (m Model) View() string {
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 
+	if m.healthTilesReady {
+		sections = append(sections, "", m.renderHealthMicroTiles())
+	}
 	sections = append(sections, m.viewReportDashboard(), "")
 	sections = append(sections, m.footerComp.View())
 
