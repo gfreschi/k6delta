@@ -11,7 +11,10 @@ import (
 
 // NewCompareCmd creates the "compare" subcommand.
 func NewCompareCmd() *cobra.Command {
-	var jsonOutput bool
+	var (
+		jsonOutput bool
+		ciMode     bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "compare <report-a.json> <report-b.json>",
@@ -21,7 +24,7 @@ func NewCompareCmd() *cobra.Command {
 			pathA := args[0]
 			pathB := args[1]
 
-			if jsonOutput {
+			if ciMode || jsonOutput {
 				return comparetui.RunJSON(pathA, pathB)
 			}
 
@@ -35,6 +38,7 @@ func NewCompareCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON instead of TUI")
+	cmd.Flags().BoolVar(&ciMode, "ci", false, "CI mode: JSON to stdout, exit code = regression verdict")
 
 	return cmd
 }

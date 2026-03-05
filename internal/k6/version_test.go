@@ -1,13 +1,13 @@
-package k6runner_test
+package k6_test
 
 import (
 	"testing"
 
-	k6runner "github.com/gfreschi/k6delta/internal/k6"
+	"github.com/gfreschi/k6delta/internal/k6"
 )
 
 func TestSupportsJSONStreaming(t *testing.T) {
-	supported, err := k6runner.SupportsJSONStreaming()
+	supported, err := k6.SupportsJSONStreaming()
 	if err != nil {
 		t.Skipf("k6 not available: %v", err)
 	}

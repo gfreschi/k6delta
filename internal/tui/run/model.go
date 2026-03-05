@@ -17,9 +17,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/config"
-	k6runner "github.com/gfreschi/k6delta/internal/k6"
+	"github.com/gfreschi/k6delta/internal/k6"
 	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/report"
+	"github.com/gfreschi/k6delta/internal/verdict"
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
@@ -63,6 +64,7 @@ type Model struct {
 	provider    provider.InfraProvider
 	baseURL     string
 	skipAnalyze bool
+	verdictCfg  config.VerdictConfig
 
 	ctx *tuictx.ProgramContext
 
@@ -75,7 +77,7 @@ type Model struct {
 	preSnapshot  provider.Snapshot
 	postSnapshot provider.Snapshot
 
-	k6Result   *k6runner.RunResult
+	k6Result   *k6.RunResult
 	metrics    []provider.MetricResult
 	activities provider.Activities
 
@@ -107,7 +109,7 @@ type Model struct {
 	streamingSupported bool
 	liveMode           bool
 	graphMode          bool
-	k6PointChan        chan k6runner.K6Point
+	k6PointChan        chan k6.K6Point
 	k6Cancel           context.CancelFunc
 	rpsChart           streamchart.Model
 	latencyChart       streamchart.Model
@@ -135,7 +137,7 @@ type snapshotMsg struct {
 	snapshot provider.Snapshot
 	label    string
 }
-type k6DoneMsg struct{ result k6runner.RunResult }
+type k6DoneMsg struct{ result k6.RunResult }
 type analysisMsg struct {
 	metrics    []provider.MetricResult
 	activities provider.Activities
@@ -145,7 +147,7 @@ type reportMsg struct {
 	path   string
 }
 type errMsg struct{ err error }
-type k6PointMsg struct{ point k6runner.K6Point }
+type k6PointMsg struct{ point k6.K6Point }
 type exportDoneMsg struct{ path string }
 type openDoneMsg struct{ path string }
 
@@ -157,7 +159,7 @@ type ProgressMsg struct {
 }
 
 // NewModel creates a new run Model.
-func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool) Model {
+func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool, verdictCfg config.VerdictConfig) Model {
 	ctx := tuictx.New(80, 24)
 
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot))
@@ -177,15 +179,16 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		{Key: "q", Action: "quit"},
 	})
 
-	prefix := k6runner.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
+	prefix := k6.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
 
-	canStream, _ := k6runner.SupportsJSONStreaming()
+	canStream, _ := k6.SupportsJSONStreaming()
 
 	return Model{
 		app:                app,
 		provider:           prov,
 		baseURL:            baseURL,
 		skipAnalyze:        skipAnalyze,
+		verdictCfg:         verdictCfg,
 		ctx:                ctx,
 		currentPhase:       phaseInit,
 		stepper:            st,
@@ -350,7 +353,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Start streaming k6 with live dashboard
-			m.k6PointChan = make(chan k6runner.K6Point, 256)
+			m.k6PointChan = make(chan k6.K6Point, 256)
 			m.liveMode = true
 
 			m.liveFocusMgr = focus.New(2)
@@ -774,31 +777,31 @@ func (m Model) renderReport() string {
 		}
 	}
 
-	v := computeVerdict(verdictInput{
-		k6Exit:      k6Exit,
-		alb5xx:      alb5xx,
-		ecsCPUPeak:  ecsCPUPeak,
-		tasksBefore: m.preSnapshot.TaskRunning,
-		tasksAfter:  m.postSnapshot.TaskRunning,
-		activities:  m.activities,
-	})
+	v := computeVerdict(verdict.Input{
+		K6Exit:      k6Exit,
+		ALB5xx:      alb5xx,
+		ECScPUPeak:  ecsCPUPeak,
+		TasksBefore: m.preSnapshot.TaskRunning,
+		TasksAfter:  m.postSnapshot.TaskRunning,
+		Activities:  m.activities,
+	}, m.verdictCfg)
 
 	var verdictStyle lipgloss.Style
-	switch v.level {
-	case verdictFail:
+	switch v.Level {
+	case verdict.Fail:
 		verdictStyle = s.Verdict.Fail
-	case verdictWarn:
+	case verdict.Warn:
 		verdictStyle = s.Verdict.Warn
 	default:
 		verdictStyle = s.Verdict.Pass
 	}
-	sections = append(sections, "", "  "+s.Common.BoldStyle.Render("Verdict: ")+verdictStyle.Render(v.level.String()))
-	for _, reason := range v.reasons {
+	sections = append(sections, "", "  "+s.Common.BoldStyle.Render("Verdict: ")+verdictStyle.Render(v.Level.String()))
+	for _, reason := range v.Reasons {
 		icon := "\u2713"
-		switch v.level {
-		case verdictFail:
+		switch v.Level {
+		case verdict.Fail:
 			icon = "\u2717"
-		case verdictWarn:
+		case verdict.Warn:
 			icon = "\u26a0"
 		}
 		sections = append(sections, fmt.Sprintf("  %s %s", icon, reason))
@@ -1206,33 +1209,33 @@ func (m Model) renderVerdictBar() string {
 		}
 	}
 
-	v := computeVerdict(verdictInput{
-		k6Exit:      k6Exit,
-		alb5xx:      alb5xx,
-		ecsCPUPeak:  ecsCPUPeak,
-		tasksBefore: m.preSnapshot.TaskRunning,
-		tasksAfter:  m.postSnapshot.TaskRunning,
-		activities:  m.activities,
-	})
+	v := computeVerdict(verdict.Input{
+		K6Exit:      k6Exit,
+		ALB5xx:      alb5xx,
+		ECScPUPeak:  ecsCPUPeak,
+		TasksBefore: m.preSnapshot.TaskRunning,
+		TasksAfter:  m.postSnapshot.TaskRunning,
+		Activities:  m.activities,
+	}, m.verdictCfg)
 
 	var verdictStyle lipgloss.Style
-	switch v.level {
-	case verdictFail:
+	switch v.Level {
+	case verdict.Fail:
 		verdictStyle = s.Verdict.Fail
-	case verdictWarn:
+	case verdict.Warn:
 		verdictStyle = s.Verdict.Warn
 	default:
 		verdictStyle = s.Verdict.Pass
 	}
 
 	var b strings.Builder
-	b.WriteString("  " + s.Common.BoldStyle.Render("Verdict: ") + verdictStyle.Render(v.level.String()))
-	for _, reason := range v.reasons {
+	b.WriteString("  " + s.Common.BoldStyle.Render("Verdict: ") + verdictStyle.Render(v.Level.String()))
+	for _, reason := range v.Reasons {
 		icon := "\u2713"
-		switch v.level {
-		case verdictFail:
+		switch v.Level {
+		case verdict.Fail:
 			icon = "\u2717"
-		case verdictWarn:
+		case verdict.Warn:
 			icon = "\u26a0"
 		}
 		b.WriteString("\n  " + icon + " " + reason)
@@ -1281,7 +1284,7 @@ func fmtIntPtr(v *int) string {
 // --- Live Dashboard ---
 
 func (m Model) runK6Streaming(k6Ctx context.Context) tea.Cmd {
-	cfg := k6runner.RunConfig{
+	cfg := k6.RunConfig{
 		TestFile:      m.app.TestFile,
 		Env:           m.app.Env,
 		ResultsPrefix: m.resultsPrefix,
@@ -1293,7 +1296,7 @@ func (m Model) runK6Streaming(k6Ctx context.Context) tea.Cmd {
 	ch := m.k6PointChan
 	startTime := m.startTime
 	return func() tea.Msg {
-		result, err := k6runner.RunStreaming(k6Ctx, cfg, ch)
+		result, err := k6.RunStreaming(k6Ctx, cfg, ch)
 		if err != nil {
 			return errMsg{err: fmt.Errorf("k6 streaming: %w", err)}
 		}
@@ -1313,7 +1316,7 @@ func (m Model) waitForK6Point() tea.Cmd {
 	}
 }
 
-func (m *Model) handleK6Point(point k6runner.K6Point) {
+func (m *Model) handleK6Point(point k6.K6Point) {
 	pointTime, err := time.Parse(time.RFC3339, point.Time)
 	if err != nil {
 		return
@@ -1517,7 +1520,7 @@ func (m Model) renderHealthBar() string {
 // runK6Fallback hands the terminal to k6 via tea.ExecProcess (no live dashboard).
 // Used when k6 JSON streaming is not available.
 func (m Model) runK6Fallback() tea.Cmd {
-	cfg := k6runner.RunConfig{
+	cfg := k6.RunConfig{
 		TestFile:      m.app.TestFile,
 		Env:           m.app.Env,
 		ResultsPrefix: m.resultsPrefix,
@@ -1527,8 +1530,8 @@ func (m Model) runK6Fallback() tea.Cmd {
 		cfg.BaseURL = m.baseURL
 	}
 
-	args := k6runner.BuildArgs(cfg)
-	env := k6runner.BuildEnv(cfg)
+	args := k6.BuildArgs(cfg)
+	env := k6.BuildEnv(cfg)
 
 	c := exec.Command("k6", args...)
 	c.Env = env
@@ -1544,7 +1547,7 @@ func (m Model) runK6Fallback() tea.Cmd {
 				return errMsg{err: fmt.Errorf("k6 exec: %w", err)}
 			}
 		}
-		return k6DoneMsg{result: k6runner.RunResult{
+		return k6DoneMsg{result: k6.RunResult{
 			ExitCode:  exitCode,
 			StartTime: startTime,
 			EndTime:   time.Now().UTC(),

@@ -1,9 +1,10 @@
-package k6runner
+package k6
 
 import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"time"
@@ -51,7 +52,8 @@ func RunStreaming(ctx context.Context, cfg RunConfig, points chan<- K6Point) (Ru
 	result.EndTime = time.Now()
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			result.ExitCode = exitErr.ExitCode()
 			return result, nil
 		}

@@ -11,7 +11,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	k6config "github.com/gfreschi/k6delta/internal/config"
+	"github.com/gfreschi/k6delta/internal/provider"
 )
+
+var _ provider.InfraProvider = (*Provider)(nil)
 
 // Provider implements provider.InfraProvider for AWS ECS.
 type Provider struct {

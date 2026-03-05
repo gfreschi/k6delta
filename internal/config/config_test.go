@@ -149,14 +149,26 @@ func TestInterpolateOptionalEmpty(t *testing.T) {
 }
 
 func TestValidatePhase(t *testing.T) {
-	valid := []string{"smoke", "load", "stress", "soak"}
-	for _, p := range valid {
-		if err := ValidatePhase(p); err != nil {
-			t.Errorf("ValidatePhase(%q) = %v, want nil", p, err)
-		}
+	tests := []struct {
+		name    string
+		phase   string
+		wantErr bool
+	}{
+		{"valid smoke", "smoke", false},
+		{"valid load", "load", false},
+		{"valid stress", "stress", false},
+		{"valid soak", "soak", false},
+		{"invalid benchmark", "benchmark", true},
+		{"invalid empty", "", true},
+		{"invalid random", "xyz", true},
 	}
-	if err := ValidatePhase("benchmark"); err == nil {
-		t.Error("ValidatePhase(\"benchmark\") = nil, want error")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidatePhase(tt.phase)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ValidatePhase(%q) error = %v, wantErr %v", tt.phase, err, tt.wantErr)
+			}
+		})
 	}
 }
 

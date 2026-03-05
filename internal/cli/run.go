@@ -4,16 +4,21 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
 	"github.com/gfreschi/k6delta/internal/config"
-	k6runner "github.com/gfreschi/k6delta/internal/k6"
+	"github.com/gfreschi/k6delta/internal/k6"
+	"github.com/gfreschi/k6delta/internal/provider"
 	"github.com/gfreschi/k6delta/internal/provider/ecs"
+	"github.com/gfreschi/k6delta/internal/report"
 	runtui "github.com/gfreschi/k6delta/internal/tui/run"
+	"github.com/gfreschi/k6delta/internal/verdict"
 )
 
 // NewRunCmd creates the "run" subcommand.
@@ -27,6 +32,7 @@ func NewRunCmd() *cobra.Command {
 		skipAnalyze bool
 		dryRun      bool
 		baseURL     string
+		ciMode      bool
 	)
 
 	cmd := &cobra.Command{
@@ -57,7 +63,11 @@ func NewRunCmd() *cobra.Command {
 				return err
 			}
 
-			m := runtui.NewModel(resolved, prov, baseURL, skipAnalyze)
+			if ciMode {
+				return runCI(ctx, resolved, prov, baseURL, skipAnalyze, cfg.Verdicts.WithDefaults())
+			}
+
+			m := runtui.NewModel(resolved, prov, baseURL, skipAnalyze, cfg.Verdicts.WithDefaults())
 			p := tea.NewProgram(m)
 			prov.SetOnProgress(func(id string, current, total int) {
 				p.Send(runtui.ProgressMsg{ID: id, Current: current, Total: total})
@@ -77,6 +87,7 @@ func NewRunCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&skipAnalyze, "skip-analyze", false, "skip CloudWatch analysis after k6 run")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print k6 command without executing")
 	cmd.Flags().StringVar(&baseURL, "base-url", "", "override base URL for k6 test")
+	cmd.Flags().BoolVar(&ciMode, "ci", false, "CI mode: no TUI, JSON to stdout, exit code = verdict")
 
 	_ = cmd.MarkFlagRequired("app")
 	_ = cmd.MarkFlagRequired("phase")
@@ -84,9 +95,146 @@ func NewRunCmd() *cobra.Command {
 	return cmd
 }
 
+func runCI(ctx context.Context, app config.ResolvedApp, prov provider.InfraProvider, baseURL string, skipAnalyze bool, vcfg config.VerdictConfig) error {
+	fmt.Fprintf(os.Stderr, "k6delta: checking credentials...\n")
+	if err := prov.CheckCredentials(ctx); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "k6delta: pre-snapshot...\n")
+	presnap, err := prov.TakeSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("pre-snapshot: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "k6delta: running k6...\n")
+	prefix := k6.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
+	k6Cfg := k6.RunConfig{
+		TestFile:      app.TestFile,
+		ResultsPrefix: prefix,
+		ResultsDir:    app.ResultsDir,
+		BaseURL:       baseURL,
+	}
+	k6Result, err := k6.Run(ctx, k6Cfg, os.Stderr, os.Stderr)
+	if err != nil {
+		return fmt.Errorf("k6 run: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "k6delta: post-snapshot...\n")
+	postsnap, err := prov.TakeSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("post-snapshot: %w", err)
+	}
+
+	var metrics []provider.MetricResult
+	var activities provider.Activities
+	if !skipAnalyze {
+		fmt.Fprintf(os.Stderr, "k6delta: fetching metrics...\n")
+		metrics, err = prov.FetchMetrics(ctx, k6Result.StartTime, k6Result.EndTime, 60)
+		if err != nil {
+			return fmt.Errorf("fetch metrics: %w", err)
+		}
+
+		fmt.Fprintf(os.Stderr, "k6delta: fetching activities...\n")
+		activities, err = prov.FetchActivities(ctx, k6Result.StartTime, k6Result.EndTime)
+		if err != nil {
+			return fmt.Errorf("fetch activities: %w", err)
+		}
+	}
+
+	infra := buildInfraMetricsCI(metrics)
+
+	info := report.RunInfo{
+		App:             app.Name,
+		Env:             app.Env,
+		Phase:           app.Phase,
+		Start:           k6Result.StartTime.Format(time.RFC3339),
+		End:             k6Result.EndTime.Format(time.RFC3339),
+		K6Exit:          k6Result.ExitCode,
+		DurationSeconds: int(k6Result.EndTime.Sub(k6Result.StartTime).Seconds()),
+	}
+
+	k6SummaryPath := filepath.Join(app.ResultsDir, prefix+"-summary.json")
+	if _, statErr := os.Stat(k6SummaryPath); statErr != nil {
+		k6SummaryPath = ""
+	}
+
+	unifiedReport, err := report.BuildUnifiedReportFromInfra(
+		info, k6SummaryPath, infra,
+		presnap.TaskRunning, postsnap.TaskRunning,
+		presnap.ASGInstances, postsnap.ASGInstances,
+	)
+	if err != nil {
+		return fmt.Errorf("build report: %w", err)
+	}
+
+	unifiedReport.ScalingActivities = activities
+	unifiedReport.AlarmHistory = activities.Alarms
+
+	reportPath := filepath.Join(app.ResultsDir, prefix+"-report.json")
+	if writeErr := report.WriteReport(unifiedReport, reportPath); writeErr != nil {
+		fmt.Fprintf(os.Stderr, "k6delta: warning: could not write report: %v\n", writeErr)
+	} else {
+		fmt.Fprintf(os.Stderr, "k6delta: report written to %s\n", reportPath)
+	}
+
+	// Compute verdict
+	var cpuPeak *float64
+	if infra != nil && infra.ECSCPU != nil {
+		cpuPeak = infra.ECSCPU.Peak
+	}
+	v := verdict.Compute(verdict.Input{
+		K6Exit:      k6Result.ExitCode,
+		ALB5xx:      infra.ALB5xx,
+		ECScPUPeak:  cpuPeak,
+		TasksBefore: presnap.TaskRunning,
+		TasksAfter:  postsnap.TaskRunning,
+		Activities:  activities,
+	}, vcfg)
+
+	output := map[string]any{
+		"verdict":     v.Level.String(),
+		"reasons":     v.Reasons,
+		"report":      unifiedReport,
+		"report_path": reportPath,
+	}
+	if err := ciOutput(output); err != nil {
+		return err
+	}
+
+	os.Exit(v.ExitCode())
+	return nil
+}
+
+func buildInfraMetricsCI(metrics []provider.MetricResult) *report.InfraMetrics {
+	infra := &report.InfraMetrics{}
+	for _, m := range metrics {
+		pa := &report.PeakAvg{Peak: m.Peak, Avg: m.Avg}
+		switch m.ID {
+		case "ecs_cpu":
+			infra.ECSCPU = pa
+		case "ecs_memory":
+			infra.ECSMemory = pa
+		case "cluster_cpu_reservation":
+			infra.ClusterCPUReservation = pa
+		case "cluster_memory_reservation":
+			infra.ClusterMemoryReservation = pa
+		case "capacity_provider_reservation":
+			infra.CapacityProviderReservation = pa
+		case "alb_response_time":
+			infra.ALBResponseTimeP95 = m.Peak
+		case "alb_5xx":
+			if m.Peak != nil {
+				infra.ALB5xx = int(*m.Peak)
+			}
+		}
+	}
+	return infra
+}
+
 func printDryRun(app config.ResolvedApp, baseURL string) error {
-	prefix := k6runner.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
-	cfg := k6runner.RunConfig{
+	prefix := k6.GenerateResultsPrefix(app.Name, app.Phase, app.Env)
+	cfg := k6.RunConfig{
 		TestFile:      app.TestFile,
 		Env:           app.Env,
 		ResultsPrefix: prefix,
@@ -94,7 +242,7 @@ func printDryRun(app config.ResolvedApp, baseURL string) error {
 		BaseURL:       baseURL,
 	}
 
-	args := k6runner.BuildArgs(cfg)
+	args := k6.BuildArgs(cfg)
 
 	var envVars []string
 	envVars = append(envVars, "K6_WEB_DASHBOARD=true")

@@ -1,9 +1,10 @@
-// Package k6runner builds command-line arguments and environment variables
+// Package k6 builds command-line arguments and environment variables
 // for executing k6 load tests via os/exec.
-package k6runner
+package k6
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -85,7 +86,8 @@ func Run(ctx context.Context, cfg RunConfig, stdout, stderr io.Writer) (RunResul
 	result.EndTime = time.Now()
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			result.ExitCode = exitErr.ExitCode()
 			return result, nil
 		}

@@ -1,4 +1,4 @@
-package k6runner
+package k6
 
 import "encoding/json"
 
