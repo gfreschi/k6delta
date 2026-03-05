@@ -25,6 +25,7 @@ func NewAnalyzeCmd() *cobra.Command {
 		period     int32
 		jsonOutput bool
 		outputFile string
+		ciMode     bool
 	)
 
 	cmd := &cobra.Command{
@@ -52,7 +53,7 @@ func NewAnalyzeCmd() *cobra.Command {
 				return err
 			}
 
-			if jsonOutput {
+			if ciMode || jsonOutput {
 				return analyzetui.RunJSON(resolved, prov, startTime, endTime, period, outputFile)
 			}
 
@@ -78,6 +79,7 @@ func NewAnalyzeCmd() *cobra.Command {
 	cmd.Flags().Int32Var(&period, "period", 60, "CloudWatch metric period in seconds")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON instead of TUI")
 	cmd.Flags().StringVar(&outputFile, "output", "", "write JSON output to file")
+	cmd.Flags().BoolVar(&ciMode, "ci", false, "CI mode: JSON to stdout, no TUI")
 
 	_ = cmd.MarkFlagRequired("app")
 
