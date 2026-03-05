@@ -31,6 +31,9 @@ coverage.html
 credentials
 credentials.json
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db
