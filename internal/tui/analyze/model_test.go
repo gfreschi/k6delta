@@ -43,3 +43,27 @@ func TestAnalyzeModel_goldenHappyPath(t *testing.T) {
 	out := model.View()
 	golden.RequireEqual(t, []byte(out))
 }
+
+func TestAnalyzeModel_goldenHappyPath_stacked(t *testing.T) {
+	prov, err := mock.New("happy-path")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := testutil.ResolvedApp()
+	start := testutil.ReferenceTime
+	end := start.Add(60 * time.Second)
+
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "")
+
+	var model tea.Model = m
+	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	model, _ = model.Update(authOKMsg{})
+	model, _ = model.Update(stateDoneMsg{snapshot: testutil.SampleSnapshot()})
+	model, _ = model.Update(metricsDoneMsg{metrics: testutil.SampleMetrics()})
+	model, _ = model.Update(activitiesDoneMsg{activities: testutil.SampleActivities()})
+
+	out := model.View()
+	golden.RequireEqual(t, []byte(out))
+}
