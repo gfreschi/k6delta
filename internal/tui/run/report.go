@@ -291,6 +291,14 @@ func (m Model) anyPanelExpanded() bool {
 		m.eventsPanel.ExpandMode() != constants.ExpandNormal
 }
 
+func (m *Model) expandFocusedPanelFull() {
+	panels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].SetExpandFull()
+	}
+}
+
 func (m *Model) resetAllPanelExpand() {
 	m.k6Panel.ResetExpand()
 	m.graphsPanel.ResetExpand()

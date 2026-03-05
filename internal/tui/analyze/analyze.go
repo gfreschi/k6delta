@@ -152,6 +152,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Keys.Expand):
 				m.cycleExpandFocusedPanel()
 				return m, nil
+			case key.Matches(msg, keys.Keys.Enter):
+				m.expandFocusedPanelFull()
+				return m, nil
 			case key.Matches(msg, keys.Keys.Escape):
 				if m.anyPanelExpanded() {
 					m.resetAllPanelExpand()

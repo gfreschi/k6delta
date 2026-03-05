@@ -78,6 +78,11 @@ func (m *Model) CycleExpand() {
 	m.expandMode = (m.expandMode + 1) % (constants.ExpandFull + 1)
 }
 
+// SetExpandFull sets expand mode directly to full.
+func (m *Model) SetExpandFull() {
+	m.expandMode = constants.ExpandFull
+}
+
 // ResetExpand resets expand mode to normal.
 func (m *Model) ResetExpand() {
 	m.expandMode = constants.ExpandNormal

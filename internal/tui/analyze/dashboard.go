@@ -12,9 +12,10 @@ import (
 
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
+	"github.com/gfreschi/k6delta/internal/tui/components/metriccard"
 	"github.com/gfreschi/k6delta/internal/tui/components/overlay"
 	"github.com/gfreschi/k6delta/internal/tui/components/panel"
-	"github.com/gfreschi/k6delta/internal/tui/components/table"
+	"github.com/gfreschi/k6delta/internal/tui/components/timeline"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 )
 
@@ -32,7 +33,7 @@ func (m *Model) initDashboard() {
 	m.metricsPanel.SetContent(m.renderMetricsContent())
 
 	m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, bottomH)
-	m.eventsPanel.SetContent(m.renderActivitiesContent())
+	m.eventsPanel.SetContent(m.renderActivitiesTimeline())
 
 	m.focusMgr = focus.New(3)
 	m.statePanel.SetFocused(true)
@@ -114,6 +115,14 @@ func (m Model) anyPanelExpanded() bool {
 		m.eventsPanel.ExpandMode() != constants.ExpandNormal
 }
 
+func (m *Model) expandFocusedPanelFull() {
+	panels := []*panel.Model{&m.statePanel, &m.metricsPanel, &m.eventsPanel}
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(panels) {
+		panels[idx].SetExpandFull()
+	}
+}
+
 func (m *Model) resetAllPanelExpand() {
 	m.statePanel.ResetExpand()
 	m.metricsPanel.ResetExpand()
@@ -141,36 +150,99 @@ func (m *Model) scrollFocusedPanel(dir int) {
 }
 
 func (m Model) renderStateContent() string {
-	var lines []string
-	lines = append(lines, fmt.Sprintf("ECS Tasks:  running=%d  desired=%d",
-		m.snapshot.TaskRunning, m.snapshot.TaskDesired))
+	tileW := 14
+	var tiles []string
+
+	// Tasks tile
+	taskTile := metriccard.NewModel(m.ctx, "tasks", "count", tileW)
+	taskTile.SetValue(float64(m.snapshot.TaskRunning), float64(max(m.snapshot.TaskDesired, 1)))
+	taskTile.SetDelta(fmt.Sprintf("run=%d des=%d", m.snapshot.TaskRunning, m.snapshot.TaskDesired))
+	taskTile.SetSeverity(metriccard.SeverityOK)
+	tiles = append(tiles, taskTile.View())
+
+	// ASG tile
 	if m.snapshot.ASGName != "" {
-		lines = append(lines, fmt.Sprintf("ASG:        in_service=%d  desired=%d",
-			m.snapshot.ASGInstances, m.snapshot.ASGDesired))
+		asgTile := metriccard.NewModel(m.ctx, "asg", "count", tileW)
+		asgTile.SetValue(float64(m.snapshot.ASGInstances), float64(max(m.snapshot.ASGDesired, 1)))
+		asgTile.SetDelta(fmt.Sprintf("in=%d des=%d", m.snapshot.ASGInstances, m.snapshot.ASGDesired))
+		asgTile.SetSeverity(metriccard.SeverityOK)
+		tiles = append(tiles, asgTile.View())
 	}
-	return strings.Join(lines, "\n")
+
+	return lipgloss.JoinHorizontal(lipgloss.Top, tiles...)
 }
 
 func (m Model) renderMetricsContent() string {
-	var metricRows []table.Row
-	for _, mr := range m.metrics {
-		if mr.Peak == nil || mr.Avg == nil {
-			metricRows = append(metricRows, table.Row{mr.ID, "-", "-", fmt.Sprintf("%d", len(mr.Values))})
-		} else {
-			metricRows = append(metricRows, table.Row{mr.ID,
-				fmt.Sprintf("%.2f", *mr.Peak),
-				fmt.Sprintf("%.2f", *mr.Avg),
-				fmt.Sprintf("%d", len(mr.Values))})
-		}
+	if len(m.metrics) == 0 {
+		return m.ctx.Styles.Common.FaintTextStyle.Render("No metrics available")
 	}
-	metricTbl := table.NewModel(m.ctx, []table.Column{
-		{Title: "Metric", Width: 35},
-		{Title: "Peak", Width: 10, Align: lipgloss.Right},
-		{Title: "Avg", Width: 10, Align: lipgloss.Right},
-		{Title: "Points", Width: 8, Align: lipgloss.Right},
-	})
-	metricTbl.SetRows(metricRows)
-	return metricTbl.View()
+
+	tileW := 14
+	metricsW := m.ctx.ContentWidth * 55 / 100
+	innerW := metricsW - 4
+	tilesPerRow := max(innerW/(tileW+2), 1)
+
+	var tiles []string
+	for _, mr := range m.metrics {
+		unit := metricUnit(mr.ID)
+		t := metriccard.NewModel(m.ctx, metricShortLabel(mr.ID), unit, tileW)
+		if mr.Peak != nil && mr.Avg != nil {
+			t.SetReportData(*mr.Peak, *mr.Avg, mr.Values)
+		}
+		tiles = append(tiles, t.View())
+	}
+
+	return renderTileGrid(tiles, tilesPerRow)
+}
+
+func metricUnit(id string) string {
+	switch {
+	case strings.HasSuffix(id, "_cpu"), strings.HasSuffix(id, "_memory"),
+		strings.Contains(id, "reservation"):
+		return "%"
+	case strings.Contains(id, "response_time"):
+		return "ms"
+	default:
+		return ""
+	}
+}
+
+func metricShortLabel(id string) string {
+	switch id {
+	case "service_cpu":
+		return "cpu"
+	case "service_memory":
+		return "mem"
+	case "alb_requests_per_target":
+		return "rps"
+	case "alb_response_time":
+		return "p95"
+	case "alb_5xx":
+		return "5xx"
+	case "cluster_cpu_reservation":
+		return "cpuRes"
+	case "cluster_memory_reservation":
+		return "memRes"
+	default:
+		if len(id) > 6 {
+			return id[:6]
+		}
+		return id
+	}
+}
+
+// renderTileGrid arranges tile views into rows of tilesPerRow.
+func renderTileGrid(tiles []string, tilesPerRow int) string {
+	var rows []string
+	for i := 0; i < len(tiles); i += tilesPerRow {
+		end := i + tilesPerRow
+		if end > len(tiles) {
+			end = len(tiles)
+		}
+		row := lipgloss.JoinHorizontal(lipgloss.Top, tiles[i:end]...)
+		rows = append(rows, row)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rows...)
 }
 
 func (m Model) renderActivitiesContent() string {
@@ -213,6 +285,72 @@ func (m Model) renderActivitiesContent() string {
 		return "No scaling activities during test window"
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m Model) renderActivitiesTimeline() string {
+	start, errS := time.Parse(time.RFC3339, m.startTime)
+	end, errE := time.Parse(time.RFC3339, m.endTime)
+	if errS != nil || errE != nil {
+		return m.renderActivitiesContent()
+	}
+
+	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*55/100
+	innerW := eventsW - 4
+
+	tl := timeline.NewModel(m.ctx, start, end, innerW)
+
+	// Add metric lanes
+	for _, mr := range m.metrics {
+		if mr.Peak == nil || len(mr.Values) == 0 {
+			continue
+		}
+		unit := metricUnit(mr.ID)
+		label := metricShortLabel(mr.ID)
+		lane := timeline.Lane{
+			Label:  label,
+			Values: mr.Values,
+			Peak:   *mr.Peak,
+			Unit:   unit,
+		}
+		if strings.HasSuffix(mr.ID, "_cpu") {
+			lane.Threshold = 90
+		}
+		tl.AddLane(lane)
+	}
+
+	// Scaling events
+	for _, sa := range m.activities.ServiceScaling {
+		t, err := time.Parse(time.RFC3339, sa.Time)
+		if err != nil {
+			continue
+		}
+		tl.AddEvent(timeline.Event{
+			Start: t,
+			End:   t.Add(30 * time.Second),
+			Type:  timeline.EventScaling,
+			Label: "scale",
+		})
+	}
+
+	// Alarm events
+	for _, alarm := range m.activities.Alarms {
+		t, err := time.Parse(time.RFC3339, alarm.Time)
+		if err != nil {
+			continue
+		}
+		evType := timeline.EventAlarm
+		if alarm.NewState == "OK" {
+			evType = timeline.EventResolved
+		}
+		tl.AddEvent(timeline.Event{
+			Start: t,
+			End:   t,
+			Type:  evType,
+			Label: alarm.AlarmName,
+		})
+	}
+
+	return tl.View()
 }
 
 func (m Model) renderRawDisplay() string {
