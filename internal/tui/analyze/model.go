@@ -76,7 +76,6 @@ type Model struct {
 	statePanel   panel.Model
 	metricsPanel panel.Model
 	eventsPanel  panel.Model
-	rawMode      bool
 }
 
 // NewModel creates a new analyze TUI model.
@@ -395,10 +394,6 @@ func (m *Model) resizeDashboardPanels() {
 }
 
 func (m Model) viewDashboard() string {
-	if m.rawMode {
-		return m.renderRawDisplay()
-	}
-
 	width := m.ctx.ContentWidth
 	stateView := m.statePanel.View()
 

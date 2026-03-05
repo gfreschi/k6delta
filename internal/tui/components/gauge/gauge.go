@@ -62,7 +62,7 @@ func (m Model) View() string {
 
 func (m Model) thresholdColor(pct float64) lipgloss.Style {
 	switch {
-	case pct > 0.95:
+	case pct >= 0.95:
 		return m.ctx.Styles.Common.ErrorStyle
 	case pct > 0.85:
 		return m.ctx.Styles.Common.WarnStyle

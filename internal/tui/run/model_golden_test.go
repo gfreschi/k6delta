@@ -11,6 +11,7 @@ import (
 	"github.com/gfreschi/k6delta/internal/report"
 	"github.com/gfreschi/k6delta/internal/tui/golden"
 	"github.com/gfreschi/k6delta/internal/tui/testutil"
+	"github.com/gfreschi/k6delta/internal/verdict"
 )
 
 func TestRunModel_reportDashboard(t *testing.T) {
@@ -76,6 +77,14 @@ func TestRunModel_reportDashboard(t *testing.T) {
 			ASG:           report.BeforeAfter{Before: 2, After: 2},
 		},
 	}
+
+	v := computeVerdict(verdict.Input{
+		K6Exit:      rm.k6Result.ExitCode,
+		TasksBefore: rm.preSnapshot.TaskRunning,
+		TasksAfter:  rm.postSnapshot.TaskRunning,
+		Activities:  rm.activities,
+	}, rm.verdictCfg)
+	rm.computedVerdict = &v
 
 	rm.initDashboard()
 
@@ -143,6 +152,14 @@ func TestRunModel_reportDashboard_stacked(t *testing.T) {
 			ASG:           report.BeforeAfter{Before: 2, After: 2},
 		},
 	}
+
+	v2 := computeVerdict(verdict.Input{
+		K6Exit:      rm.k6Result.ExitCode,
+		TasksBefore: rm.preSnapshot.TaskRunning,
+		TasksAfter:  rm.postSnapshot.TaskRunning,
+		Activities:  rm.activities,
+	}, rm.verdictCfg)
+	rm.computedVerdict = &v2
 
 	rm.initDashboard()
 

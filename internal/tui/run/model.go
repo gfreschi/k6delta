@@ -66,6 +66,8 @@ type Model struct {
 	skipAnalyze bool
 	verdictCfg  config.VerdictConfig
 
+	computedVerdict *verdict.Result
+
 	ctx *tuictx.ProgramContext
 
 	currentPhase  runPhase
@@ -118,6 +120,7 @@ type Model struct {
 	reservGauge        gauge.Model
 	liveSnapshot       provider.Snapshot
 	liveMetrics        []provider.MetricResult
+	infraError         error
 	liveRPSCount       int
 	liveRPSTime        time.Time
 
@@ -432,9 +435,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForK6Point()
 
 	case infraTickMsg:
-		m.liveSnapshot = msg.snapshot
-		m.liveMetrics = msg.metrics
-		m.updateGaugesFromMetrics(msg.metrics)
+		if msg.err != nil {
+			m.infraError = msg.err
+		} else {
+			m.infraError = nil
+			m.liveSnapshot = msg.snapshot
+			m.liveMetrics = msg.metrics
+			m.updateGaugesFromMetrics(msg.metrics)
+		}
 		if m.liveMode {
 			if m.liveFocusMgr != nil {
 				m.updateLivePanelContent()
@@ -444,6 +452,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case k6DoneMsg:
+		if m.liveRPSCount > 0 && !m.liveRPSTime.IsZero() {
+			m.rpsChart.Push(m.liveRPSTime, float64(m.liveRPSCount))
+			m.liveRPSCount = 0
+		}
 		m.liveMode = false
 		m.k6Cancel = nil
 		m.footerComp = footer.NewModel(m.ctx, []footer.KeyHint{
@@ -472,6 +484,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reportMsg:
 		m.report = msg.report
 		m.reportPath = msg.path
+		k6Exit := 0
+		if m.k6Result != nil {
+			k6Exit = m.k6Result.ExitCode
+		}
+		alb5xx := 0
+		var ecsCPUPeak *float64
+		for _, mr := range m.metrics {
+			switch mr.ID {
+			case "alb_5xx":
+				if mr.Peak != nil {
+					alb5xx = int(*mr.Peak)
+				}
+			case "service_cpu":
+				ecsCPUPeak = mr.Peak
+			}
+		}
+		v := computeVerdict(verdict.Input{
+			K6Exit:      k6Exit,
+			ALB5xx:      alb5xx,
+			ECSCPUPeak:  ecsCPUPeak,
+			TasksBefore: m.preSnapshot.TaskRunning,
+			TasksAfter:  m.postSnapshot.TaskRunning,
+			Activities:  m.activities,
+		}, m.verdictCfg)
+		m.computedVerdict = &v
 		flashCmd := m.stepper.MarkDone(stepReport, "written")
 		m.currentPhase = phaseDone
 		m.initDashboard()
@@ -793,31 +830,10 @@ func (m Model) renderReport() string {
 	}
 
 	// Verdict
-	k6Exit := 0
-	if m.k6Result != nil {
-		k6Exit = m.k6Result.ExitCode
+	if m.computedVerdict == nil {
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
-	alb5xx := 0
-	var ecsCPUPeak *float64
-	for _, mr := range m.metrics {
-		switch mr.ID {
-		case "alb_5xx":
-			if mr.Peak != nil {
-				alb5xx = int(*mr.Peak)
-			}
-		case "service_cpu":
-			ecsCPUPeak = mr.Peak
-		}
-	}
-
-	v := computeVerdict(verdict.Input{
-		K6Exit:      k6Exit,
-		ALB5xx:      alb5xx,
-		ECSCPUPeak:  ecsCPUPeak,
-		TasksBefore: m.preSnapshot.TaskRunning,
-		TasksAfter:  m.postSnapshot.TaskRunning,
-		Activities:  m.activities,
-	}, m.verdictCfg)
+	v := m.computedVerdict
 
 	var verdictStyle lipgloss.Style
 	switch v.Level {
@@ -1107,7 +1123,11 @@ func (m Model) renderK6SummaryGrid() string {
 	}
 
 	var b strings.Builder
-	colWidth := m.ctx.ContentWidth / 2
+	panelInnerW := m.ctx.ContentWidth - 2
+	if m.ctx.ContentWidth >= constants.BreakpointSplit {
+		panelInnerW = m.ctx.ContentWidth/2 - 2
+	}
+	colWidth := panelInnerW / 2
 	for _, r := range rows {
 		left := lipgloss.NewStyle().Width(colWidth).Render(r.left)
 		right := lipgloss.NewStyle().Width(colWidth).Render(r.right)
@@ -1225,31 +1245,10 @@ func (m Model) renderGraphsPanelContent() string {
 func (m Model) renderVerdictBar() string {
 	s := m.ctx.Styles
 
-	k6Exit := 0
-	if m.k6Result != nil {
-		k6Exit = m.k6Result.ExitCode
+	if m.computedVerdict == nil {
+		return ""
 	}
-	alb5xx := 0
-	var ecsCPUPeak *float64
-	for _, mr := range m.metrics {
-		switch mr.ID {
-		case "alb_5xx":
-			if mr.Peak != nil {
-				alb5xx = int(*mr.Peak)
-			}
-		case "service_cpu":
-			ecsCPUPeak = mr.Peak
-		}
-	}
-
-	v := computeVerdict(verdict.Input{
-		K6Exit:      k6Exit,
-		ALB5xx:      alb5xx,
-		ECSCPUPeak:  ecsCPUPeak,
-		TasksBefore: m.preSnapshot.TaskRunning,
-		TasksAfter:  m.postSnapshot.TaskRunning,
-		Activities:  m.activities,
-	}, m.verdictCfg)
+	v := m.computedVerdict
 
 	var verdictStyle lipgloss.Style
 	switch v.Level {
@@ -1419,7 +1418,7 @@ func (m *Model) resizeLivePanels() {
 		m.liveGraphPanel.SetDimensions(leftW, panelH)
 		m.liveInfraPanel.SetDimensions(w-leftW, panelH)
 	case w >= constants.BreakpointStacked:
-		m.liveGraphPanel.SetDimensions(w, m.ctx.ContentHeight/2)
+		m.liveGraphPanel.SetDimensions(w, m.ctx.ContentHeight*2/3)
 		m.liveInfraPanel.SetDimensions(w, m.ctx.ContentHeight/3)
 	}
 }
@@ -1504,6 +1503,9 @@ func (m Model) renderInfraLivePanel() string {
 	var lines []string
 
 	lines = append(lines, s.Header.Root.Render("─ Infrastructure "))
+	if m.infraError != nil {
+		lines = append(lines, s.Common.WarnStyle.Render("  Warning: "+m.infraError.Error()))
+	}
 	lines = append(lines, "")
 	lines = append(lines, m.cpuGauge.View())
 	lines = append(lines, m.cpuTrend.View())

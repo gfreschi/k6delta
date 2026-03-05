@@ -4,6 +4,7 @@ package comparetui
 import (
 	"fmt"
 	"math"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ import (
 
 type errMsg struct{ err error }
 type resultMsg struct{ result *report.ComparisonResult }
+type exportDoneMsg struct{ path string }
 
 type sortMode int
 
@@ -60,9 +62,10 @@ type Model struct {
 	infraPanel panel.Model
 	focusMgr   *focus.Manager
 
-	sort     sortMode
-	err      error
-	quitting bool
+	sort         sortMode
+	exportStatus string
+	err          error
+	quitting     bool
 }
 
 // NewModel creates a new compare TUI model for the two given report paths.
@@ -94,6 +97,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		return m, nil
+	case exportDoneMsg:
+		m.exportStatus = fmt.Sprintf("Exported to %s", msg.path)
+		return m, nil
 	case panel.TransitionTickMsg:
 		if m.focusMgr != nil {
 			cmd := tea.Batch(m.k6Panel.AdvanceTransition(), m.infraPanel.AdvanceTransition())
@@ -104,6 +110,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(msg, keys.Keys.Quit):
 			m.quitting = true
 			return m, tea.Quit
+		case key.Matches(msg, keys.CompareKeys.Export):
+			if m.result != nil {
+				return m, m.exportComparison()
+			}
+			return m, nil
 		case key.Matches(msg, keys.CompareKeys.Sort):
 			m.sort = (m.sort + 1) % 3
 			m.refreshPanels()
@@ -170,7 +181,11 @@ func (m Model) View() string {
 	}
 
 	// Summary + footer
-	sections = append(sections, "", m.renderSummary(), "", m.footerComp.View())
+	sections = append(sections, "", m.renderSummary())
+	if m.exportStatus != "" {
+		sections = append(sections, m.ctx.Styles.Common.SuccessStyle.Render("  "+m.exportStatus))
+	}
+	sections = append(sections, "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
@@ -194,6 +209,7 @@ func (m *Model) initDashboard() {
 		{Key: "tab", Action: "next panel"},
 		{Key: "↑↓", Action: "scroll"},
 		{Key: "s", Action: "sort"},
+		{Key: "e", Action: "export"},
 		{Key: "q", Action: "quit"},
 	})
 }
@@ -323,6 +339,22 @@ func (m Model) renderInfraTable() string {
 	})
 	tbl.SetRows(infraRows)
 	return tbl.View()
+}
+
+// --- Export ---
+
+func (m Model) exportComparison() tea.Cmd {
+	return func() tea.Msg {
+		data, err := report.CompareReportsJSON(m.pathA, m.pathB)
+		if err != nil {
+			return errMsg{err: fmt.Errorf("export comparison: %w", err)}
+		}
+		path := "comparison-report.json"
+		if writeErr := os.WriteFile(path, data, 0o644); writeErr != nil {
+			return errMsg{err: fmt.Errorf("write comparison: %w", writeErr)}
+		}
+		return exportDoneMsg{path: path}
+	}
 }
 
 // --- Sort ---

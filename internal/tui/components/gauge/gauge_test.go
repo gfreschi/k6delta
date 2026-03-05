@@ -59,3 +59,28 @@ func TestGauge_thresholdColoring(t *testing.T) {
 		t.Error("expected different rendering for normal vs critical")
 	}
 }
+
+func TestGaugeThresholdBoundary(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+
+	tests := []struct {
+		name  string
+		value float64
+		max   float64
+	}{
+		{"below_95", 94.9, 100},
+		{"exactly_95", 95.0, 100},
+		{"above_95", 96.0, 100},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := gauge.NewModel(ctx, "Test", 20)
+			g.SetValue(tt.value, tt.max)
+			view := g.View()
+			if len(view) == 0 {
+				t.Fatalf("gauge View() returned empty string for value=%.1f", tt.value)
+			}
+		})
+	}
+}
