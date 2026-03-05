@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.55.0
 	github.com/aws/aws-sdk-go-v2/service/ecs v1.73.0
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.54.7
-	github.com/aws/aws-sdk-go-v2/service/sts v1.41.7
+	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -25,8 +25,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.19 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.18 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.15 // indirect
