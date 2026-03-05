@@ -155,6 +155,42 @@ func TestInitCreatesFile(t *testing.T) {
 	}
 }
 
+func TestRunCIModeHelp(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "run", "--help")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--help failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "--ci") {
+		t.Error("expected --ci flag in run help output")
+	}
+}
+
+func TestCompareCIModeHelp(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "compare", "--help")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--help failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "--ci") {
+		t.Error("expected --ci flag in compare help output")
+	}
+}
+
+func TestAnalyzeCIModeHelp(t *testing.T) {
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, "analyze", "--help")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("--help failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "--ci") {
+		t.Error("expected --ci flag in analyze help output")
+	}
+}
+
 func TestInitRefusesOverwrite(t *testing.T) {
 	bin := buildBinary(t)
 
