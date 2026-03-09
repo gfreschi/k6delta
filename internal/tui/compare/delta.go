@@ -214,7 +214,7 @@ func (m Model) renderDrillDown() string {
 	}
 
 	s := m.ctx.Styles
-	width := m.ctx.ContentWidth - 4
+	width := m.ctx.ContentWidth - constants.PanelBorderWidth - constants.PanelInnerPadding
 	var lines []string
 
 	tiers := s.Delta.Tiers()

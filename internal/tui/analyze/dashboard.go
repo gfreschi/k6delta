@@ -55,12 +55,18 @@ func (m *Model) resizeDashboardPanels() {
 	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 30)
 	m.statePanel.SetDimensions(w, topH)
 
-	if w >= constants.BreakpointSplit {
+	switch {
+	case w >= constants.BreakpointSplit:
 		metricsW := w * constants.PanelSplitPct / 100
 		eventsW := w - metricsW
 		m.metricsPanel.SetDimensions(metricsW, bottomH)
 		m.eventsPanel.SetDimensions(eventsW, bottomH)
-	} else {
+	case w >= constants.BreakpointNarrow:
+		metricsW := w * constants.PanelSplitPctNarrow / 100
+		eventsW := w - metricsW
+		m.metricsPanel.SetDimensions(metricsW, bottomH)
+		m.eventsPanel.SetDimensions(eventsW, bottomH)
+	default:
 		m.metricsPanel.SetDimensions(w, bottomH)
 		m.eventsPanel.SetDimensions(w, bottomH)
 	}
@@ -77,7 +83,7 @@ func (m Model) viewDashboard() string {
 	}
 
 	switch {
-	case width >= constants.BreakpointSplit:
+	case width >= constants.BreakpointNarrow:
 		middle := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.metricsPanel.View(),
 			m.eventsPanel.View(),
@@ -175,12 +181,12 @@ func (m Model) renderStateContent() string {
 
 func (m Model) renderMetricsContent() string {
 	if len(m.metrics) == 0 {
-		return m.ctx.Styles.Common.FaintTextStyle.Render("No metrics available")
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No metrics available", "")
 	}
 
 	tileW := constants.TileWidthNormal
 	metricsW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
-	innerW := metricsW - 4
+	innerW := metricsW - constants.PanelBorderWidth - constants.PanelInnerPadding
 	tilesPerRow := max(innerW/(tileW+2), 1)
 
 	var tiles []string
@@ -270,7 +276,7 @@ func (m Model) renderActivitiesContent() string {
 	}
 
 	if len(lines) == 0 {
-		return "No scaling activities during test window"
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No scaling activities during test window", "")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -283,7 +289,7 @@ func (m Model) renderActivitiesTimeline() string {
 	}
 
 	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*constants.PanelSplitPct/100
-	innerW := eventsW - 4
+	innerW := eventsW - constants.PanelBorderWidth - constants.PanelInnerPadding
 
 	tl := timeline.NewModel(m.ctx, start, end, innerW)
 

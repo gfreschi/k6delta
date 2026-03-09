@@ -106,10 +106,14 @@ func (m *Model) updateLivePanelContent() {
 
 func (m *Model) resizeLivePanels() {
 	w := m.ctx.ContentWidth
-	panelH := m.ctx.ContentHeight - 8
+	panelH := m.ctx.ContentHeight - constants.LayoutOverhead
 	switch {
 	case w >= constants.BreakpointSplit:
 		leftW := w * constants.PanelSplitPct / 100
+		m.liveGraphPanel.SetDimensions(leftW, panelH)
+		m.liveInfraPanel.SetDimensions(w-leftW, panelH)
+	case w >= constants.BreakpointNarrow:
+		leftW := w * constants.PanelSplitPctNarrow / 100
 		m.liveGraphPanel.SetDimensions(leftW, panelH)
 		m.liveInfraPanel.SetDimensions(w-leftW, panelH)
 	case w >= constants.BreakpointStacked:
@@ -123,6 +127,8 @@ func (m Model) viewLiveDashboard() string {
 	switch {
 	case width >= constants.BreakpointSplit:
 		return m.viewLiveSplit()
+	case width >= constants.BreakpointNarrow:
+		return m.viewLiveSplit() // compact split at 50/50
 	case width >= constants.BreakpointStacked:
 		return m.viewLiveStacked()
 	default:

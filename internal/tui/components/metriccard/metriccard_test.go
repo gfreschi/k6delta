@@ -130,8 +130,8 @@ func TestCustomThresholds(t *testing.T) {
 		thresholds metriccard.SeverityThresholds
 	}{
 		{"default warn at 80%", 82.0, 100.0, metriccard.DefaultSeverityThresholds()},
-		{"custom warn at 50%", 52.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrRatio: 0.90}},
-		{"custom err at 70%", 72.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrRatio: 0.70}},
+		{"custom warn at 50%", 52.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrorRatio: 0.90}},
+		{"custom err at 70%", 72.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrorRatio: 0.70}},
 	}
 
 	for _, tt := range tests {

@@ -189,8 +189,8 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, baseURL strin
 		spinner:            s,
 		streamingSupported: canStream,
 		graphMode:          true,
-		rpsChart:     streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*constants.PanelSplitPct/100, 12),
-		latencyChart: streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*constants.PanelSplitPct/100, 12),
+		rpsChart:     streamchart.NewModel(ctx, "Throughput", "req/s", ctx.ContentWidth*constants.PanelSplitPct/100, constants.LiveChartHeight),
+		latencyChart: streamchart.NewModel(ctx, "Latency", "ms", ctx.ContentWidth*constants.PanelSplitPct/100, constants.LiveChartHeight),
 		cpuTile:      metriccard.NewModel(ctx, "CPU", "%", constants.TileWidthWide),
 		memTile:      metriccard.NewModel(ctx, "Memory", "%", constants.TileWidthWide),
 		reservTile:   metriccard.NewModel(ctx, "Reserv", "%", constants.TileWidthWide),
@@ -336,12 +336,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		width := m.ctx.ContentWidth
 		switch {
 		case width >= constants.BreakpointSplit:
-			chartW := width*constants.PanelSplitPct/100 - 2
-			m.rpsChart.Resize(chartW, 12)
-			m.latencyChart.Resize(chartW, 12)
+			chartW := width*constants.PanelSplitPct/100 - constants.PanelBorderWidth
+			chartH := constants.CalcChartHeight(m.ctx.ContentHeight - constants.LayoutOverhead)
+			m.rpsChart.Resize(chartW, chartH)
+			m.latencyChart.Resize(chartW, chartH)
 		case width >= constants.BreakpointStacked:
-			m.rpsChart.Resize(width-2, 10)
-			m.latencyChart.Resize(width-2, 10)
+			chartH := constants.CalcChartHeight(m.ctx.ContentHeight/3 - constants.PanelBorderWidth)
+			m.rpsChart.Resize(width-constants.PanelBorderWidth, chartH)
+			m.latencyChart.Resize(width-constants.PanelBorderWidth, chartH)
 		}
 		m.cpuTile.UpdateContext(m.ctx)
 		m.memTile.UpdateContext(m.ctx)
@@ -403,7 +405,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.liveFocusMgr = focus.New(2)
 			leftW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
 			rightW := m.ctx.ContentWidth - leftW
-			panelH := m.ctx.ContentHeight - 8
+			panelH := m.ctx.ContentHeight - constants.LayoutOverhead
 			m.liveGraphPanel = panel.NewModel(m.ctx, "Graphs [1]", leftW, panelH)
 			m.liveGraphPanel.SetFocused(true)
 			m.liveInfraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", rightW, panelH)

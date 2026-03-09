@@ -28,17 +28,17 @@ func DeltaStyle(ds DeltaStyleTiers, pctChange float64, lowerIsBetter bool) lipgl
 	isRegression := (lowerIsBetter && pctChange > 0) || (!lowerIsBetter && pctChange < 0)
 
 	switch {
-	case absPct < 2:
+	case absPct < DeltaNeutralPct:
 		return ds.Neutral
-	case isImprovement && absPct < 5:
+	case isImprovement && absPct < DeltaMildPct:
 		return ds.BetterMild
-	case isImprovement && absPct < 15:
+	case isImprovement && absPct < DeltaModeratePct:
 		return ds.Better
 	case isImprovement:
 		return ds.BetterStrong
-	case isRegression && absPct < 5:
+	case isRegression && absPct < DeltaMildPct:
 		return ds.WorseMild
-	case isRegression && absPct < 15:
+	case isRegression && absPct < DeltaModeratePct:
 		return ds.Worse
 	case isRegression:
 		return ds.WorseSevere

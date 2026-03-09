@@ -12,34 +12,30 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/gfreschi/k6delta/internal/tui/common"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
-// blockCharsRunes is the pre-computed rune slice for sparkline rendering.
-var blockCharsRunes = []rune(blockChars)
+// Re-export severity types so callers can use metriccard.SeverityOK etc.
+type Severity = common.Severity
 
-// Severity controls the border color of a metric card tile.
-type Severity int
+// SeverityThresholds is a re-export of common.SeverityThresholds.
+type SeverityThresholds = common.SeverityThresholds
 
-// Severity levels for border coloring.
 const (
-	SeverityOK   Severity = iota
-	SeverityWarn
-	SeverityErr
+	SeverityOK   = common.SeverityOK
+	SeverityWarn = common.SeverityWarn
+	SeverityErr  = common.SeverityError
 )
 
-// SeverityThresholds controls the ratio thresholds for severity coloring.
-// All fields are guaranteed non-zero after DefaultSeverityThresholds().
-type SeverityThresholds struct {
-	WarnRatio float64 // ratio at which severity becomes Warn (default 0.80)
-	ErrRatio  float64 // ratio at which severity becomes Err (default 0.95)
+// DefaultSeverityThresholds returns the standard severity thresholds.
+func DefaultSeverityThresholds() common.SeverityThresholds {
+	return common.DefaultSeverityThresholds
 }
 
-// DefaultSeverityThresholds returns thresholds with default values.
-func DefaultSeverityThresholds() SeverityThresholds {
-	return SeverityThresholds{WarnRatio: 0.80, ErrRatio: 0.95}
-}
+// blockCharsRunes is the pre-computed rune slice for sparkline rendering.
+var blockCharsRunes = []rune(blockChars)
 
 // Block sparkline characters (U+2581 through U+2588).
 const blockChars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
@@ -52,9 +48,9 @@ type Model struct {
 	width      int
 	value      float64
 	max        float64
-	severity   Severity
+	severity   common.Severity
 	hasData    bool
-	thresholds SeverityThresholds
+	thresholds common.SeverityThresholds
 	values     []float64 // sparkline data points
 	delta      string    // for count variant: "5->3"
 
@@ -70,7 +66,7 @@ func NewModel(ctx *tuictx.ProgramContext, label, unit string, width int) Model {
 		label:      label,
 		unit:       unit,
 		width:      width,
-		thresholds: DefaultSeverityThresholds(),
+		thresholds: common.DefaultSeverityThresholds,
 	}
 }
 
@@ -79,7 +75,7 @@ func (m *Model) SetValue(value, max float64) {
 	m.value = value
 	m.max = max
 	m.hasData = true
-	m.severity = computeSeverity(value, max, m.thresholds)
+	m.severity = computeSeverity(value, max, m.thresholds.WarnRatio, m.thresholds.ErrorRatio)
 }
 
 // SetDelta sets the delta string for count-variant tiles (e.g., "5->3").
@@ -108,17 +104,17 @@ func (m *Model) SetReportData(peak, avg float64, values []float64) {
 	m.hasData = true
 	m.value = peak
 	if m.max > 0 {
-		m.severity = computeSeverity(peak, m.max, m.thresholds)
+		m.severity = computeSeverity(peak, m.max, m.thresholds.WarnRatio, m.thresholds.ErrorRatio)
 	}
 }
 
 // SetSeverity overrides the auto-computed severity.
-func (m *Model) SetSeverity(sev Severity) {
+func (m *Model) SetSeverity(sev common.Severity) {
 	m.severity = sev
 }
 
 // SetThresholds overrides the default severity thresholds.
-func (m *Model) SetThresholds(th SeverityThresholds) {
+func (m *Model) SetThresholds(th common.SeverityThresholds) {
 	m.thresholds = th
 }
 
@@ -307,26 +303,22 @@ func (m Model) renderBlockSparkline(width int) string {
 func (m Model) borderStyle() lipgloss.Style {
 	ts := m.ctx.Styles.Tile
 	switch m.severity {
-	case SeverityWarn:
+	case common.SeverityWarn:
 		return ts.BorderWarn
-	case SeverityErr:
+	case common.SeverityError:
 		return ts.BorderError
 	default:
 		return ts.BorderOK
 	}
 }
 
-func computeSeverity(value, max float64, th SeverityThresholds) Severity {
+func computeSeverity(value, max, warnRatio, errorRatio float64) common.Severity {
 	if max <= 0 {
-		return SeverityOK
+		return common.SeverityOK
 	}
 	ratio := value / max
-	switch {
-	case ratio >= th.ErrRatio:
-		return SeverityErr
-	case ratio >= th.WarnRatio:
-		return SeverityWarn
-	default:
-		return SeverityOK
-	}
+	return common.SeverityFromRatio(ratio, common.SeverityThresholds{
+		WarnRatio:  warnRatio,
+		ErrorRatio: errorRatio,
+	})
 }

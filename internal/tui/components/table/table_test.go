@@ -86,6 +86,48 @@ func TestTableGrow(t *testing.T) {
 	}
 }
 
+func TestSetWidth_redistributesColumns(t *testing.T) {
+	ctx := testContext()
+	cols := []table.Column{
+		{Title: "Metric", Width: 26},
+		{Title: "Value", Width: 12},
+		{Title: "Delta", Width: 12},
+	}
+	m := table.NewModel(ctx, cols)
+	m.SetRows([]table.Row{{"p95 latency", "150ms", "-10%"}})
+
+	// Set width narrower than original total
+	m.SetWidth(40)
+
+	view := m.View()
+	if view == "" {
+		t.Error("View() returned empty string after SetWidth")
+	}
+}
+
+func TestTruncateCell(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		maxWidth int
+		want     string
+	}{
+		{"fits", "hello", 10, "hello"},
+		{"exact", "hello", 5, "hello"},
+		{"truncated", "hello world", 8, "hello..."},
+		{"very short max", "hello", 3, "hel"},
+		{"empty", "", 5, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := table.TruncateCell(tt.value, tt.maxWidth)
+			if got != tt.want {
+				t.Errorf("TruncateCell(%q, %d) = %q, want %q", tt.value, tt.maxWidth, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTableGrowNoWidth(t *testing.T) {
 	ctx := testContext()
 	tbl := table.NewModel(ctx, []table.Column{

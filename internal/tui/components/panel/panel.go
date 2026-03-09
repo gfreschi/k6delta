@@ -230,8 +230,7 @@ func (m Model) borderStyle() lipgloss.Style {
 	case progress < 0.33:
 		return m.ctx.Styles.Panel.Root
 	case progress < 0.66:
-		// Mid-point: use primary border with rounded border (between the two)
-		return m.ctx.Styles.Panel.Border.Border(lipgloss.RoundedBorder())
+		return m.ctx.Styles.Panel.Transition
 	default:
 		return m.ctx.Styles.Panel.Focused
 	}

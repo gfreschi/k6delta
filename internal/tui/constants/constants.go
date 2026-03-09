@@ -42,12 +42,31 @@ const (
 // Panel layout split ratio (percentage given to the left/infra panel).
 const PanelSplitPct = 55
 
+// PanelSplitPctNarrow is the left panel width percentage at 100-119 width (compact split).
+const PanelSplitPctNarrow = 50
+
 // Tile widths for KPI metric cards at different display contexts.
 const (
 	TileWidthNarrow = 12 // health micro-tiles (post-k6 summary strip)
 	TileWidthNormal = 14 // dashboard tiles (vital signs, infra, analyze)
 	TileWidthWide   = 16 // live dashboard tiles
 )
+
+// Layout overhead accounts for header, stepper gap, statusbar, footer, and margins.
+// header(2) + stepper-gap(2) + statusbar(1) + footer(1) + margins(2) = 8
+const LayoutOverhead = 8
+
+// LiveChartHeight is the default chart height in split layout.
+const LiveChartHeight = 12
+
+// LiveChartHeightStacked is the chart height in stacked layout.
+const LiveChartHeightStacked = 10
+
+// PanelBorderWidth is the total horizontal space consumed by panel borders (left + right).
+const PanelBorderWidth = 2
+
+// PanelInnerPadding is the total horizontal space consumed by panel inner padding.
+const PanelInnerPadding = 2
 
 // Timeline layout constants.
 const (
@@ -72,6 +91,23 @@ const (
 	IconArrowUp  = "▲"
 	IconArrowDn  = "▼"
 )
+
+// Chart height limits.
+const (
+	MinChartHeight = 6
+	MaxChartHeight = 20
+)
+
+// CalcChartHeight returns a chart height clamped between MinChartHeight and MaxChartHeight.
+func CalcChartHeight(availableHeight int) int {
+	if availableHeight < MinChartHeight {
+		return MinChartHeight
+	}
+	if availableHeight > MaxChartHeight {
+		return MaxChartHeight
+	}
+	return availableHeight
+}
 
 // CalcPanelHeights splits total height into two portions by percentage.
 // The top portion gets topPct% of totalHeight (minimum 4 lines).

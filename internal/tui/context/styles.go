@@ -41,9 +41,10 @@ type HeaderStyles struct {
 
 // PanelStyles for bordered panels with focus state.
 type PanelStyles struct {
-	Root    lipgloss.Style
-	Focused lipgloss.Style
-	Border  lipgloss.Style
+	Root       lipgloss.Style
+	Focused    lipgloss.Style
+	Border     lipgloss.Style
+	Transition lipgloss.Style // mid-transition border style
 }
 
 // TableStyles for metric and comparison tables.
@@ -151,9 +152,10 @@ func InitStyles(t theme.Theme) Styles {
 			Context: lipgloss.NewStyle().Foreground(t.FaintText),
 		},
 		Panel: PanelStyles{
-			Root:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.PrimaryBorder),
-			Focused: lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(t.FocusedBorder),
-			Border:  lipgloss.NewStyle().Foreground(t.PrimaryBorder),
+			Root:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.PrimaryBorder),
+			Focused:    lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(t.FocusedBorder),
+			Border:     lipgloss.NewStyle().Foreground(t.PrimaryBorder),
+			Transition: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(t.PrimaryBorder),
 		},
 		Table: TableStyles{
 			Header:    lipgloss.NewStyle().Bold(true).Foreground(t.SecondaryText),

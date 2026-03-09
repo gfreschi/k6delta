@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/report"
+	"github.com/gfreschi/k6delta/internal/tui/common"
 	"github.com/gfreschi/k6delta/internal/tui/components/focus"
 	"github.com/gfreschi/k6delta/internal/tui/components/footer"
 	"github.com/gfreschi/k6delta/internal/tui/components/header"
@@ -191,7 +192,7 @@ func (m Model) View() string {
 		return s.Common.ErrorStyle.Render("Error: "+m.err.Error()) + "\n"
 	}
 	if m.result == nil {
-		return "  Loading...\n"
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyPending, "Loading comparison...", "")
 	}
 
 	var sections []string

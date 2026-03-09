@@ -162,8 +162,10 @@ func (m *Model) initDashboard() {
 	m.k6Panel.SetContent(m.renderK6SummaryGrid())
 
 	m.graphsPanel = panel.NewModel(m.ctx, "Graphs [2]", w-halfW, topH)
-	m.reportRPSChart = timechart.NewModel(m.ctx, "Throughput", "req/s", w-halfW-4, topH/2-2)
-	m.reportLatencyChart = timechart.NewModel(m.ctx, "Latency", "ms", w-halfW-4, topH/2-2)
+	chartW := w - halfW - constants.PanelBorderWidth - constants.PanelInnerPadding
+	chartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
+	m.reportRPSChart = timechart.NewModel(m.ctx, "Throughput", "req/s", chartW, chartH)
+	m.reportLatencyChart = timechart.NewModel(m.ctx, "Latency", "ms", chartW, chartH)
 	m.populateReportCharts()
 	m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 
@@ -210,7 +212,8 @@ func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
 	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 55)
 
-	if w >= constants.BreakpointSplit {
+	switch {
+	case w >= constants.BreakpointSplit:
 		halfW := w / 2
 		m.k6Panel.SetDimensions(halfW, topH)
 		m.graphsPanel.SetDimensions(w-halfW, topH)
@@ -220,19 +223,36 @@ func (m *Model) resizeDashboardPanels() {
 		m.infraPanel.SetDimensions(infraW, bottomH)
 		m.eventsPanel.SetDimensions(eventsW, bottomH)
 
-		m.reportRPSChart.Resize(w-halfW-4, topH/2-2)
-		m.reportLatencyChart.Resize(w-halfW-4, topH/2-2)
-		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
-	} else {
+		chartW := w - halfW - constants.PanelBorderWidth - constants.PanelInnerPadding
+		chartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
+		m.reportRPSChart.Resize(chartW, chartH)
+		m.reportLatencyChart.Resize(chartW, chartH)
+	case w >= constants.BreakpointNarrow:
+		halfW := w / 2
+		m.k6Panel.SetDimensions(halfW, topH)
+		m.graphsPanel.SetDimensions(w-halfW, topH)
+
+		infraW := w * constants.PanelSplitPctNarrow / 100
+		eventsW := w - infraW
+		m.infraPanel.SetDimensions(infraW, bottomH)
+		m.eventsPanel.SetDimensions(eventsW, bottomH)
+
+		chartW := w - halfW - constants.PanelBorderWidth - constants.PanelInnerPadding
+		chartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
+		m.reportRPSChart.Resize(chartW, chartH)
+		m.reportLatencyChart.Resize(chartW, chartH)
+	default:
 		m.k6Panel.SetDimensions(w, topH)
 		m.graphsPanel.SetDimensions(w, topH)
 		m.infraPanel.SetDimensions(w, bottomH)
 		m.eventsPanel.SetDimensions(w, bottomH)
 
-		m.reportRPSChart.Resize(w-4, topH/2-2)
-		m.reportLatencyChart.Resize(w-4, topH/2-2)
-		m.graphsPanel.SetContent(m.renderGraphsPanelContent())
+		stackedChartW := w - constants.PanelBorderWidth - constants.PanelInnerPadding
+		stackedChartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
+		m.reportRPSChart.Resize(stackedChartW, stackedChartH)
+		m.reportLatencyChart.Resize(stackedChartW, stackedChartH)
 	}
+	m.graphsPanel.SetContent(m.renderGraphsPanelContent())
 }
 
 func (m Model) viewReportDashboard() string {
@@ -253,7 +273,7 @@ func (m Model) viewReportDashboard() string {
 	}
 
 	switch {
-	case width >= constants.BreakpointSplit:
+	case width >= constants.BreakpointNarrow:
 		topRow := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.k6Panel.View(),
 			m.graphsPanel.View(),
@@ -348,7 +368,7 @@ func (m Model) renderK6SummaryGrid() string {
 			return m.ctx.Styles.Common.FaintTextStyle.Render(
 				fmt.Sprintf("k6 exited with code %d \u2014 no summary data available", m.k6Result.ExitCode))
 		}
-		return m.ctx.Styles.Common.FaintTextStyle.Render("No k6 data available")
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No k6 data available", "")
 	}
 	k := m.report.K6
 	s := m.ctx.Styles
@@ -374,9 +394,9 @@ func (m Model) renderK6SummaryGrid() string {
 	}
 
 	var b strings.Builder
-	panelInnerW := m.ctx.ContentWidth - 2
+	panelInnerW := m.ctx.ContentWidth - constants.PanelBorderWidth
 	if m.ctx.ContentWidth >= constants.BreakpointSplit {
-		panelInnerW = m.ctx.ContentWidth/2 - 2
+		panelInnerW = m.ctx.ContentWidth/2 - constants.PanelBorderWidth
 	}
 	colWidth := panelInnerW / 2
 	colStyle := s.Common.MainTextStyle.Width(colWidth)
@@ -416,7 +436,7 @@ func (m Model) renderEventsList() string {
 	}
 
 	if len(lines) == 0 {
-		return "No scaling events recorded"
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No scaling events recorded", "")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -428,7 +448,7 @@ func (m Model) renderEventsTimeline() string {
 	}
 
 	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*constants.PanelSplitPct/100
-	innerW := eventsW - 4
+	innerW := eventsW - constants.PanelBorderWidth - constants.PanelInnerPadding
 
 	tl := timeline.NewModel(m.ctx, m.startTime, m.endTime, innerW)
 
@@ -496,7 +516,7 @@ func (m *Model) populateReportCharts() {
 
 func (m Model) renderGraphsPanelContent() string {
 	if !m.hasRPSData && !m.hasLatencyData {
-		return m.ctx.Styles.Common.FaintTextStyle.Render("No metric data for graphs")
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No metric data for graphs", "")
 	}
 
 	var sections []string
@@ -685,13 +705,13 @@ func (m Model) buildVitalSignsStrip() string {
 // renderInfraTileGrid renders infrastructure metrics as KPI tiles.
 func (m Model) renderInfraTileGrid() string {
 	if m.report == nil || m.report.Infrastructure == nil {
-		return m.ctx.Styles.Common.FaintTextStyle.Render("Infrastructure metrics pending")
+		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyPending, "Infrastructure metrics pending", "")
 	}
 	infra := m.report.Infrastructure
 
 	tileW := constants.TileWidthNormal
 	infraW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
-	innerW := infraW - 4 // panel borders + padding
+	innerW := infraW - constants.PanelBorderWidth - constants.PanelInnerPadding
 	tilesPerRow := max(innerW/(tileW+2), 1)
 
 	var tiles []string

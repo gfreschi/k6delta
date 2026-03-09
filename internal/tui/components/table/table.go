@@ -94,6 +94,7 @@ func (m Model) View() string {
 			if j < len(row) {
 				val = row[j]
 			}
+			val = TruncateCell(val, col.Width)
 			align := lipgloss.Left
 			if col.Align != 0 {
 				align = col.Align
@@ -116,42 +117,85 @@ func (m Model) View() string {
 	return b.String()
 }
 
+// TruncateCell truncates a cell value to maxWidth, adding "..." if truncated.
+func TruncateCell(value string, maxWidth int) string {
+	if maxWidth <= 0 {
+		return ""
+	}
+	w := lipgloss.Width(value)
+	if w <= maxWidth {
+		return value
+	}
+	if maxWidth <= 3 {
+		return value[:maxWidth]
+	}
+	// Truncate rune-by-rune to preserve multi-byte characters
+	truncated := ""
+	for _, r := range value {
+		candidate := truncated + string(r)
+		if lipgloss.Width(candidate+"...") > maxWidth {
+			break
+		}
+		truncated = candidate
+	}
+	return truncated + "..."
+}
+
 // resolvedColumns returns columns with Grow columns expanded to fill available width.
+// When m.width is set and no Grow columns exist, scales all columns proportionally.
 func (m Model) resolvedColumns() []Column {
 	if m.width == 0 {
 		return m.columns
 	}
 
 	growCount := 0
+	originalTotal := 0
 	for _, c := range m.columns {
+		originalTotal += c.Width
 		if c.Grow {
 			growCount++
 		}
 	}
-	if growCount == 0 {
-		return m.columns
-	}
 
-	fixed := 0
-	for _, c := range m.columns {
-		if !c.Grow {
-			fixed += c.Width
-		}
-	}
-
-	spacing := len(m.columns) - 1 // spaces between columns
-	remaining := m.width - fixed - spacing
-	if remaining < 0 {
-		remaining = 0
-	}
-	growWidth := remaining / growCount
-
+	spacing := len(m.columns) - 1
 	resolved := make([]Column, len(m.columns))
 	copy(resolved, m.columns)
-	for i := range resolved {
-		if resolved[i].Grow {
-			resolved[i].Width = growWidth
+
+	if growCount > 0 {
+		fixed := 0
+		for _, c := range m.columns {
+			if !c.Grow {
+				fixed += c.Width
+			}
 		}
+		remaining := m.width - fixed - spacing
+		if remaining < 0 {
+			remaining = 0
+		}
+		growWidth := remaining / growCount
+		for i := range resolved {
+			if resolved[i].Grow {
+				resolved[i].Width = max(growWidth, 4)
+			}
+		}
+		return resolved
+	}
+
+	// No Grow columns: redistribute proportionally
+	available := m.width - spacing
+	if available <= 0 || originalTotal <= 0 {
+		return resolved
+	}
+	ratio := float64(available) / float64(originalTotal)
+	if ratio >= 1.0 {
+		return resolved
+	}
+	for i := range resolved {
+		w := int(float64(resolved[i].Width) * ratio)
+		if w < 4 {
+			w = 4
+		}
+		resolved[i].Width = w
 	}
 	return resolved
 }
