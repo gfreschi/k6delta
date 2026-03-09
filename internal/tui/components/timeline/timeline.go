@@ -323,11 +323,21 @@ func resample(values []float64, targetLen int) []float64 {
 	result := make([]float64, targetLen)
 	ratio := float64(len(values)) / float64(targetLen)
 	for i := range targetLen {
-		idx := int(float64(i) * ratio)
-		if idx >= len(values) {
-			idx = len(values) - 1
+		bucketStart := int(float64(i) * ratio)
+		bucketEnd := int(float64(i+1) * ratio)
+		if bucketEnd > len(values) {
+			bucketEnd = len(values)
 		}
-		result[i] = values[idx]
+		if bucketStart >= len(values) {
+			bucketStart = len(values) - 1
+		}
+		maxVal := values[bucketStart]
+		for j := bucketStart + 1; j < bucketEnd; j++ {
+			if values[j] > maxVal {
+				maxVal = values[j]
+			}
+		}
+		result[i] = maxVal
 	}
 	return result
 }

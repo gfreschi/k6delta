@@ -226,20 +226,36 @@ func (m Model) renderDrillDown() string {
 		hdr := s.Common.BoldStyle.Render(label) + "  " + badge
 		lines = append(lines, hdr)
 
-		// A/B values with bar visualization
-		lines = append(lines, renderABBar("A", valA, barWidth, s))
-		lines = append(lines, renderABBar("B", valB, barWidth, s))
+		// A/B values with proportional bar visualization
+		numA := parseNumericValue(row.ValueA)
+		numB := parseNumericValue(row.ValueB)
+		maxVal := max(numA, numB)
+		ratioA, ratioB := 0.0, 0.0
+		if maxVal > 0 {
+			ratioA = numA / maxVal
+			ratioB = numB / maxVal
+		}
+		lines = append(lines, renderABBar("A", valA, ratioA, barWidth, s))
+		lines = append(lines, renderABBar("B", valB, ratioB, barWidth, s))
 		lines = append(lines, "")
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-func renderABBar(label, value string, barWidth int, s tuictx.Styles) string {
+func renderABBar(label, value string, ratio float64, barWidth int, s tuictx.Styles) string {
 	prefix := s.Common.FaintTextStyle.Render(fmt.Sprintf("  %s: %-12s", label, value))
-	fillLen := max(barWidth/4, 1)
-	bar := strings.Repeat("▓", fillLen)
+	fillLen := max(int(float64(barWidth)*ratio), 1)
+	bar := strings.Repeat("\u2593", fillLen)
 	return prefix + " " + s.Common.FaintTextStyle.Render(bar)
+}
+
+func parseNumericValue(s string) float64 {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return v
 }
 
 // --- Side-by-Side Rendering ---

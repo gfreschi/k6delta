@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gfreschi/k6delta/internal/provider"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
@@ -140,6 +141,112 @@ func TestResample(t *testing.T) {
 			got := resample(tt.values, tt.targetLen)
 			if len(got) != tt.wantLen {
 				t.Fatalf("resample(%v, %d) = len %d, want %d", tt.values, tt.targetLen, len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestResample_preservesPeaks(t *testing.T) {
+	// 10 values with a spike at index 3: downsample to 5 buckets
+	// Bucket boundaries: [0,1] [2,3] [4,5] [6,7] [8,9]
+	// The spike at index 3 (value 100) must survive in bucket [2,3]
+	values := []float64{10, 20, 30, 100, 40, 50, 60, 70, 80, 90}
+	got := resample(values, 5)
+
+	peakFound := false
+	for _, v := range got {
+		if v == 100 {
+			peakFound = true
+			break
+		}
+	}
+	if !peakFound {
+		t.Fatalf("peak (100) not preserved after downsampling: got %v", got)
+	}
+}
+
+func TestTimeline_AddScalingEvents(t *testing.T) {
+	tests := []struct {
+		name       string
+		activities []provider.ScalingActivity
+		wantEvents int
+	}{
+		{"valid timestamps", []provider.ScalingActivity{
+			{Time: "2026-01-15T10:35:00Z"},
+			{Time: "2026-01-15T10:40:00Z"},
+		}, 2},
+		{"invalid timestamp skipped", []provider.ScalingActivity{
+			{Time: "not-a-timestamp"},
+			{Time: "2026-01-15T10:35:00Z"},
+		}, 1},
+		{"all invalid", []provider.ScalingActivity{
+			{Time: "bad"},
+			{Time: "also-bad"},
+		}, 0},
+		{"empty", nil, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tuictx.New(120, 40)
+			start := time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC)
+			end := start.Add(20 * time.Minute)
+
+			m := NewModel(ctx, start, end, 80)
+			m.AddScalingEvents(tt.activities)
+
+			if len(m.events) != tt.wantEvents {
+				t.Fatalf("AddScalingEvents: got %d events, want %d", len(m.events), tt.wantEvents)
+			}
+			for _, ev := range m.events {
+				if ev.Type != EventScaling {
+					t.Errorf("event type = %d, want EventScaling", ev.Type)
+				}
+			}
+		})
+	}
+}
+
+func TestTimeline_AddAlarmEvents(t *testing.T) {
+	tests := []struct {
+		name       string
+		alarms     []provider.AlarmEvent
+		wantEvents int
+		wantTypes  []EventType
+	}{
+		{"alarm triggered", []provider.AlarmEvent{
+			{AlarmName: "high-cpu", Time: "2026-01-15T10:35:00Z", OldState: "OK", NewState: "ALARM"},
+		}, 1, []EventType{EventAlarm}},
+		{"alarm resolved", []provider.AlarmEvent{
+			{AlarmName: "high-cpu", Time: "2026-01-15T10:40:00Z", OldState: "ALARM", NewState: "OK"},
+		}, 1, []EventType{EventResolved}},
+		{"mixed states", []provider.AlarmEvent{
+			{AlarmName: "cpu", Time: "2026-01-15T10:35:00Z", OldState: "OK", NewState: "ALARM"},
+			{AlarmName: "cpu", Time: "2026-01-15T10:45:00Z", OldState: "ALARM", NewState: "OK"},
+		}, 2, []EventType{EventAlarm, EventResolved}},
+		{"invalid timestamp skipped", []provider.AlarmEvent{
+			{AlarmName: "cpu", Time: "bad-time"},
+			{AlarmName: "mem", Time: "2026-01-15T10:35:00Z", NewState: "ALARM"},
+		}, 1, []EventType{EventAlarm}},
+		{"empty", nil, 0, nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tuictx.New(120, 40)
+			start := time.Date(2026, 1, 15, 10, 30, 0, 0, time.UTC)
+			end := start.Add(20 * time.Minute)
+
+			m := NewModel(ctx, start, end, 80)
+			m.AddAlarmEvents(tt.alarms)
+
+			if len(m.events) != tt.wantEvents {
+				t.Fatalf("AddAlarmEvents: got %d events, want %d", len(m.events), tt.wantEvents)
+			}
+			for i, ev := range m.events {
+				if i < len(tt.wantTypes) && ev.Type != tt.wantTypes[i] {
+					t.Errorf("event[%d] type = %d, want %d", i, ev.Type, tt.wantTypes[i])
+				}
 			}
 		})
 	}
