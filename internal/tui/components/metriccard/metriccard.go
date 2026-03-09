@@ -12,7 +12,6 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/gfreschi/k6delta/internal/tui/components/gauge"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
@@ -33,7 +32,7 @@ const (
 // Block sparkline characters (U+2581 through U+2588).
 const blockChars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 
-// Model is a KPI tile with gauge, sparkline, or count display.
+// Model is a KPI tile with bar, sparkline, or count display.
 type Model struct {
 	ctx      *tuictx.ProgramContext
 	label    string
@@ -43,7 +42,6 @@ type Model struct {
 	max      float64
 	severity Severity
 	hasData  bool
-	gauge    gauge.Model
 	values   []float64 // sparkline data points
 	delta    string    // for count variant: "5->3"
 
@@ -59,7 +57,6 @@ func NewModel(ctx *tuictx.ProgramContext, label, unit string, width int) Model {
 		label: label,
 		unit:  unit,
 		width: width,
-		gauge: gauge.NewModel(ctx, "", width-4),
 	}
 }
 
@@ -69,9 +66,6 @@ func (m *Model) SetValue(value, max float64) {
 	m.max = max
 	m.hasData = true
 	m.severity = computeSeverity(value, max)
-	if m.unit == "%" {
-		m.gauge.SetValue(value, max)
-	}
 }
 
 // SetDelta sets the delta string for count-variant tiles (e.g., "5->3").
@@ -112,7 +106,6 @@ func (m *Model) SetSeverity(sev Severity) {
 // UpdateContext updates the shared context.
 func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
-	m.gauge.UpdateContext(ctx)
 }
 
 // View renders the tile with a severity-colored rounded border.
@@ -146,8 +139,8 @@ func (m Model) viewPercentage(border lipgloss.Style, innerW int) string {
 	valueLine := m.ctx.Styles.Common.BoldStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, valStr))
 
-	// Gauge bar
-	gaugeLine := m.gauge.View()
+	// Inline gauge bar
+	barLine := m.renderBar(innerW)
 
 	// Block sparkline
 	sparkLine := m.renderBlockSparkline(innerW)
@@ -156,7 +149,7 @@ func (m Model) viewPercentage(border lipgloss.Style, innerW int) string {
 	labelLine := m.ctx.Styles.Common.FaintTextStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, m.label))
 
-	lines := []string{valueLine, gaugeLine}
+	lines := []string{valueLine, barLine}
 	if sparkLine != "" {
 		lines = append(lines, sparkLine)
 	}
@@ -224,6 +217,39 @@ func (m Model) viewRate(border lipgloss.Style, innerW int) string {
 	return border.Width(m.width).Render(
 		lipgloss.JoinVertical(lipgloss.Left, lines...),
 	)
+}
+
+func (m Model) renderBar(width int) string {
+	pct := 0.0
+	if m.max > 0 {
+		pct = m.value / m.max
+	}
+	if pct > 1 {
+		pct = 1
+	}
+	if pct < 0 {
+		pct = 0
+	}
+	filled := int(float64(width) * pct)
+	empty := width - filled
+
+	color := m.barColor(pct)
+	bar := color.Render(strings.Repeat("\u25b0", filled)) +
+		m.ctx.Styles.Common.FaintTextStyle.Render(strings.Repeat("\u2591", empty))
+	return bar
+}
+
+func (m Model) barColor(pct float64) lipgloss.Style {
+	switch {
+	case pct >= 0.95:
+		return m.ctx.Styles.Common.ErrorStyle
+	case pct > 0.85:
+		return m.ctx.Styles.Common.WarnStyle
+	case pct > 0.70:
+		return m.ctx.Styles.Common.SuccessStyle
+	default:
+		return m.ctx.Styles.Common.MainTextStyle
+	}
 }
 
 func (m Model) renderBlockSparkline(width int) string {

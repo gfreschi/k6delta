@@ -145,18 +145,13 @@ func TestPanel_cycleExpand(t *testing.T) {
 	}
 
 	p.CycleExpand()
-	if p.ExpandMode() != constants.ExpandExpanded {
-		t.Fatalf("after 1 cycle = %d, want ExpandExpanded", p.ExpandMode())
-	}
-
-	p.CycleExpand()
 	if p.ExpandMode() != constants.ExpandFull {
-		t.Fatalf("after 2 cycles = %d, want ExpandFull", p.ExpandMode())
+		t.Fatalf("after 1 toggle = %d, want ExpandFull", p.ExpandMode())
 	}
 
 	p.CycleExpand()
 	if p.ExpandMode() != constants.ExpandNormal {
-		t.Fatalf("after 3 cycles = %d, want ExpandNormal (wrapped)", p.ExpandMode())
+		t.Fatalf("after 2 toggles = %d, want ExpandNormal", p.ExpandMode())
 	}
 }
 

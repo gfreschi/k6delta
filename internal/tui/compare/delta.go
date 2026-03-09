@@ -259,9 +259,10 @@ func (m Model) renderSideBySide() string {
 	rightTitle := m.ctx.Styles.Common.BoldStyle.Render(fmt.Sprintf("Run B: %s", m.result.RunB.Start))
 	rightTable := m.renderSingleRunTable(func(r report.ComparisonRow) string { return r.ValueB })
 
-	leftCol := lipgloss.NewStyle().Width(halfW).Render(
+	col := m.ctx.Styles.Layout.Column
+	leftCol := col.Width(halfW).Render(
 		lipgloss.JoinVertical(lipgloss.Left, leftTitle, leftTable))
-	rightCol := lipgloss.NewStyle().Width(width - halfW).Render(
+	rightCol := col.Width(width - halfW).Render(
 		lipgloss.JoinVertical(lipgloss.Left, rightTitle, rightTable))
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, leftCol, rightCol)
@@ -437,7 +438,7 @@ func (m Model) renderHelpOverlay() string {
 		{Title: "Panels", Keys: [][2]string{
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-2", "Jump to panel"},
-			{"+", "Cycle expand (normal → expanded → full)"},
+			{"+", "Toggle expand (normal / full)"},
 			{"enter", "Drill into focused panel (A/B detail)"},
 			{"↑↓ / j k", "Scroll focused panel"},
 		}},

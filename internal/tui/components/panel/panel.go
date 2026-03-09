@@ -73,9 +73,13 @@ func (m *Model) SetModel(child tea.Model) {
 // Focused returns whether this panel is focused.
 func (m Model) Focused() bool { return m.focused }
 
-// CycleExpand cycles the expand mode: normal -> expanded -> full -> normal.
+// CycleExpand toggles the expand mode between normal and full.
 func (m *Model) CycleExpand() {
-	m.expandMode = (m.expandMode + 1) % (constants.ExpandFull + 1)
+	if m.expandMode == constants.ExpandNormal {
+		m.expandMode = constants.ExpandFull
+	} else {
+		m.expandMode = constants.ExpandNormal
+	}
 }
 
 // SetExpandFull sets expand mode directly to full.

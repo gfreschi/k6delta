@@ -345,7 +345,7 @@ func (m Model) renderHelpOverlay() string {
 		{Title: "Panels", Keys: [][2]string{
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-3", "Jump to panel"},
-			{"+", "Cycle expand (normal → expanded → full)"},
+			{"+", "Toggle expand (normal / full)"},
 			{"↑↓ / j k", "Scroll focused panel"},
 		}},
 		{Title: "Actions", Keys: [][2]string{

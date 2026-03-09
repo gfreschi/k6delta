@@ -22,6 +22,7 @@ type Styles struct {
 	Timeline  TimelineStyles
 	StatusBar StatusBarStyles
 	Overlay   OverlayStyles
+	Layout    LayoutStyles
 }
 
 // ChartStyles for ntcharts chart configuration (axis, label, line).
@@ -109,6 +110,11 @@ type StatusBarStyles struct {
 	Root  lipgloss.Style
 	Label lipgloss.Style
 	Value lipgloss.Style
+}
+
+// LayoutStyles for structural containers with no visual styling.
+type LayoutStyles struct {
+	Column lipgloss.Style
 }
 
 // DeltaStyles for comparison delta coloring with intensity tiers.
@@ -205,6 +211,9 @@ func InitStyles(t theme.Theme) Styles {
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(t.FocusedBorder).
 				Padding(1, 2),
+		},
+		Layout: LayoutStyles{
+			Column: lipgloss.NewStyle(),
 		},
 		Delta: DeltaStyles{
 			Better:        lipgloss.NewStyle().Foreground(t.DeltaBetter),

@@ -29,9 +29,8 @@ type ExpandMode int
 
 // Panel expand modes.
 const (
-	ExpandNormal   ExpandMode = iota // all panels visible at default sizes
-	ExpandExpanded                   // focused panel gets most height, others title-only
-	ExpandFull                       // only focused panel renders
+	ExpandNormal ExpandMode = iota // all panels visible at default sizes
+	ExpandFull                     // only focused panel renders
 )
 
 // Minimum dimensions for panels and components.
