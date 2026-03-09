@@ -194,6 +194,16 @@ Run a single package's tests:
 go test ./internal/config/ -v
 ```
 
+Full lint (required after every implementation):
+
+```bash
+golangci-lint run ./...
+```
+
+### Golden file tests
+
+TUI views are snapshot-tested against golden files. See [docs/golden-tests.md](docs/golden-tests.md) for the full reference.
+
 ## Contributing
 
 Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on commit conventions, PR process, and code standards.
