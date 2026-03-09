@@ -59,9 +59,6 @@ const LayoutOverhead = 8
 // LiveChartHeight is the default chart height in split layout.
 const LiveChartHeight = 12
 
-// LiveChartHeightStacked is the chart height in stacked layout.
-const LiveChartHeightStacked = 10
-
 // PanelBorderWidth is the total horizontal space consumed by panel borders (left + right).
 const PanelBorderWidth = 2
 

@@ -122,23 +122,26 @@ func TruncateCell(value string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
 	}
-	w := lipgloss.Width(value)
-	if w <= maxWidth {
+	if lipgloss.Width(value) <= maxWidth {
 		return value
 	}
 	if maxWidth <= 3 {
 		return value[:maxWidth]
 	}
-	// Truncate rune-by-rune to preserve multi-byte characters
-	truncated := ""
+	// Truncate rune-by-rune, tracking width incrementally to avoid O(n^2).
+	budget := maxWidth - 3 // reserve space for "..."
+	var b strings.Builder
+	width := 0
 	for _, r := range value {
-		candidate := truncated + string(r)
-		if lipgloss.Width(candidate+"...") > maxWidth {
+		rw := lipgloss.Width(string(r))
+		if width+rw > budget {
 			break
 		}
-		truncated = candidate
+		b.WriteRune(r)
+		width += rw
 	}
-	return truncated + "..."
+	b.WriteString("...")
+	return b.String()
 }
 
 // resolvedColumns returns columns with Grow columns expanded to fill available width.

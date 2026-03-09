@@ -212,36 +212,28 @@ func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
 	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 55)
 
+	var splitPct int
 	switch {
 	case w >= constants.BreakpointSplit:
-		halfW := w / 2
-		m.k6Panel.SetDimensions(halfW, topH)
-		m.graphsPanel.SetDimensions(w-halfW, topH)
-
-		infraW := w * constants.PanelSplitPct / 100
-		eventsW := w - infraW
-		m.infraPanel.SetDimensions(infraW, bottomH)
-		m.eventsPanel.SetDimensions(eventsW, bottomH)
-
-		chartW := w - halfW - constants.PanelBorderWidth - constants.PanelInnerPadding
-		chartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
-		m.reportRPSChart.Resize(chartW, chartH)
-		m.reportLatencyChart.Resize(chartW, chartH)
+		splitPct = constants.PanelSplitPct
 	case w >= constants.BreakpointNarrow:
+		splitPct = constants.PanelSplitPctNarrow
+	}
+
+	if splitPct > 0 {
 		halfW := w / 2
 		m.k6Panel.SetDimensions(halfW, topH)
 		m.graphsPanel.SetDimensions(w-halfW, topH)
 
-		infraW := w * constants.PanelSplitPctNarrow / 100
-		eventsW := w - infraW
+		infraW := w * splitPct / 100
 		m.infraPanel.SetDimensions(infraW, bottomH)
-		m.eventsPanel.SetDimensions(eventsW, bottomH)
+		m.eventsPanel.SetDimensions(w-infraW, bottomH)
 
 		chartW := w - halfW - constants.PanelBorderWidth - constants.PanelInnerPadding
 		chartH := constants.CalcChartHeight(topH/2 - constants.PanelBorderWidth)
 		m.reportRPSChart.Resize(chartW, chartH)
 		m.reportLatencyChart.Resize(chartW, chartH)
-	default:
+	} else {
 		m.k6Panel.SetDimensions(w, topH)
 		m.graphsPanel.SetDimensions(w, topH)
 		m.infraPanel.SetDimensions(w, bottomH)
