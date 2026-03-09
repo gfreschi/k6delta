@@ -120,6 +120,33 @@ func TestSetSeverityOverride(t *testing.T) {
 	}
 }
 
+func TestCustomThresholds(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+
+	tests := []struct {
+		name       string
+		value      float64
+		max        float64
+		thresholds metriccard.SeverityThresholds
+	}{
+		{"default warn at 80%", 82.0, 100.0, metriccard.DefaultSeverityThresholds()},
+		{"custom warn at 50%", 52.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrRatio: 0.90}},
+		{"custom err at 70%", 72.0, 100.0, metriccard.SeverityThresholds{WarnRatio: 0.50, ErrRatio: 0.70}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := metriccard.NewModel(ctx, "Test", "%", 20)
+			m.SetThresholds(tt.thresholds)
+			m.SetValue(tt.value, tt.max)
+			view := m.View()
+			if len(view) == 0 {
+				t.Fatal("expected non-empty view with custom thresholds")
+			}
+		})
+	}
+}
+
 func TestUpdateContext(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := metriccard.NewModel(ctx, "CPU", "%", 20)

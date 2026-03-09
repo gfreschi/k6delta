@@ -29,34 +29,48 @@ const (
 	SeverityErr
 )
 
+// SeverityThresholds controls the ratio thresholds for severity coloring.
+// All fields are guaranteed non-zero after DefaultSeverityThresholds().
+type SeverityThresholds struct {
+	WarnRatio float64 // ratio at which severity becomes Warn (default 0.80)
+	ErrRatio  float64 // ratio at which severity becomes Err (default 0.95)
+}
+
+// DefaultSeverityThresholds returns thresholds with default values.
+func DefaultSeverityThresholds() SeverityThresholds {
+	return SeverityThresholds{WarnRatio: 0.80, ErrRatio: 0.95}
+}
+
 // Block sparkline characters (U+2581 through U+2588).
 const blockChars = "\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588"
 
 // Model is a KPI tile with bar, sparkline, or count display.
 type Model struct {
-	ctx      *tuictx.ProgramContext
-	label    string
-	unit     string
-	width    int
-	value    float64
-	max      float64
-	severity Severity
-	hasData  bool
-	values   []float64 // sparkline data points
-	delta    string    // for count variant: "5->3"
+	ctx        *tuictx.ProgramContext
+	label      string
+	unit       string
+	width      int
+	value      float64
+	max        float64
+	severity   Severity
+	hasData    bool
+	thresholds SeverityThresholds
+	values     []float64 // sparkline data points
+	delta      string    // for count variant: "5->3"
 
 	// Report mode fields
 	peak float64
 	avg  float64
 }
 
-// NewModel creates a metric card tile.
+// NewModel creates a metric card tile with default severity thresholds.
 func NewModel(ctx *tuictx.ProgramContext, label, unit string, width int) Model {
 	return Model{
-		ctx:   ctx,
-		label: label,
-		unit:  unit,
-		width: width,
+		ctx:        ctx,
+		label:      label,
+		unit:       unit,
+		width:      width,
+		thresholds: DefaultSeverityThresholds(),
 	}
 }
 
@@ -65,7 +79,7 @@ func (m *Model) SetValue(value, max float64) {
 	m.value = value
 	m.max = max
 	m.hasData = true
-	m.severity = computeSeverity(value, max)
+	m.severity = computeSeverity(value, max, m.thresholds)
 }
 
 // SetDelta sets the delta string for count-variant tiles (e.g., "5->3").
@@ -94,13 +108,18 @@ func (m *Model) SetReportData(peak, avg float64, values []float64) {
 	m.hasData = true
 	m.value = peak
 	if m.max > 0 {
-		m.severity = computeSeverity(peak, m.max)
+		m.severity = computeSeverity(peak, m.max, m.thresholds)
 	}
 }
 
 // SetSeverity overrides the auto-computed severity.
 func (m *Model) SetSeverity(sev Severity) {
 	m.severity = sev
+}
+
+// SetThresholds overrides the default severity thresholds.
+func (m *Model) SetThresholds(th SeverityThresholds) {
+	m.thresholds = th
 }
 
 // UpdateContext updates the shared context.
@@ -297,15 +316,15 @@ func (m Model) borderStyle() lipgloss.Style {
 	}
 }
 
-func computeSeverity(value, max float64) Severity {
+func computeSeverity(value, max float64, th SeverityThresholds) Severity {
 	if max <= 0 {
 		return SeverityOK
 	}
 	ratio := value / max
 	switch {
-	case ratio >= 0.95:
+	case ratio >= th.ErrRatio:
 		return SeverityErr
-	case ratio >= 0.80:
+	case ratio >= th.WarnRatio:
 		return SeverityWarn
 	default:
 		return SeverityOK
