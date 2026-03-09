@@ -38,13 +38,13 @@ for demos and testing.
 - **CI mode:** `--ci` flag on all commands - JSON to stdout, exit code 0 (pass/warn) or 1 (fail)
 - **Interactive TUI:** live dashboard with braille charts, panel navigation, and responsive layout
 - **Standalone analysis:** query infrastructure metrics for any time window, no k6 required
-- **Demo mode:** try the full TUI experience with `k6delta demo` — no infrastructure or k6 binary needed
+- **Demo mode:** try the full TUI experience with `k6delta demo` - no infrastructure or k6 binary needed
 - **Graceful degradation:** optional config fields are silently skipped, not errored
 
 ## Quick Start
 
 ```bash
-# Try it instantly — no config, no infrastructure, no k6 needed
+# Try it instantly - no config, no infrastructure, no k6 needed
 k6delta demo
 
 # Or with a specific scenario
@@ -95,56 +95,15 @@ make build    # produces ./k6delta
 
 ## Commands
 
-> Run any command with `--help` for full flag reference.
+> See [USAGE.md](USAGE.md) for the full flag reference, examples, and CI integration guide.
 
-### `k6delta run`
-
-Executes a k6 test while capturing infrastructure state before and after. Collects metrics from your provider and produces a unified JSON report.
-
-```bash
-k6delta run --app <name> --phase <smoke|load|stress|soak> [flags]
-```
-
-Output files:
-
-- `{prefix}.json` - k6 summary
-- `{prefix}.html` - k6 web dashboard
-- `{prefix}-timeseries.json.gz` - k6 time-series data
-- `{prefix}-report.json` - unified report (k6 + infra + scaling)
-
-### `k6delta analyze`
-
-Queries infrastructure metrics for a time window without running k6.
-
-```bash
-k6delta analyze --app <name> --env <env> [flags]
-```
-
-### `k6delta compare`
-
-Compares two unified report JSON files side-by-side with percentage deltas and direction indicators. With `--ci`, checks regression thresholds and sets exit code.
-
-```bash
-k6delta compare <report-a.json> <report-b.json> [--json | --ci]
-```
-
-### `k6delta demo`
-
-Runs a simulated load test with synthetic data. No AWS, Docker, or k6 binary needed.
-
-```bash
-k6delta demo [--scenario <name>] [--speed <multiplier>] [--list]
-```
-
-Available scenarios: `happy-path`, `cpu-spike`, `scale-out`, `cascade-failure`.
-
-### `k6delta init`
-
-Generates a starter `k6delta.yaml` config file.
-
-```bash
-k6delta init
-```
+| Command                | Description                                              |
+|------------------------|----------------------------------------------------------|
+| `k6delta run`          | Execute k6 test + monitor infrastructure + generate report |
+| `k6delta analyze`      | Query infrastructure metrics for a time window (no k6)   |
+| `k6delta compare`      | Diff two report JSONs with deltas and regression verdict |
+| `k6delta demo`         | Simulated load test with synthetic data (no setup needed)|
+| `k6delta init`         | Generate a starter `k6delta.yaml` config                 |
 
 ## Configuration
 
@@ -175,7 +134,7 @@ Optional fields (`asg_prefix`, `capacity_provider`, `alarm_prefix`) are silently
 - **[k6](https://k6.io/docs/get-started/installation/):** must be available in your `PATH` (not needed for `k6delta demo`)
 - **For Docker Compose provider:** Docker Engine running with your compose project up
 - **For ECS provider:** AWS credentials configured via the [AWS SDK default credential chain](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configuring-sdk.html)
-- **For Mock provider / demo:** no prerequisites — works out of the box
+- **For Mock provider / demo:** no prerequisites - works out of the box
 
 ## Development
 
@@ -193,6 +152,16 @@ Run a single package's tests:
 ```bash
 go test ./internal/config/ -v
 ```
+
+Full lint (required after every implementation):
+
+```bash
+golangci-lint run ./...
+```
+
+### Golden file tests
+
+TUI views are snapshot-tested against golden files. See [docs/golden-tests.md](docs/golden-tests.md) for the full reference.
 
 ## Contributing
 

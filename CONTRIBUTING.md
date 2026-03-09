@@ -122,7 +122,7 @@ git commit --amend -s --no-edit
 
 ### PR Guidelines
 
-- Keep PRs focused — one feature or fix per PR
+- Keep PRs focused - one feature or fix per PR
 - Write a clear description of *what* and *why*
 - Reference related issues (e.g., `Closes #42`)
 - For larger changes, open an issue first to discuss the approach
@@ -130,7 +130,7 @@ git commit --amend -s --no-edit
 ## Code Standards
 
 - Format with `gofmt` (standard Go formatting)
-- All packages live under `internal/` — nothing is exported
+- All packages live under `internal/` - nothing is exported
 - Follow existing patterns: interfaces for providers, `ResolvedApp` for config, graceful degradation for optional fields
 - Prefer table-driven tests
 
