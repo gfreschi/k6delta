@@ -136,6 +136,11 @@ func (c *testChild) Init() tea.Cmd                       { return nil }
 func (c *testChild) Update(tea.Msg) (tea.Model, tea.Cmd) { return c, nil }
 func (c *testChild) View() string                        { return c.content }
 
+func completeExpandTransition(p *panel.Model) {
+	for p.AdvanceExpandTransition() != nil {
+	}
+}
+
 func TestPanel_cycleExpand(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	p := panel.NewModel(ctx, "Test", 40, 10)
@@ -145,11 +150,13 @@ func TestPanel_cycleExpand(t *testing.T) {
 	}
 
 	p.CycleExpand()
+	completeExpandTransition(&p)
 	if p.ExpandMode() != constants.ExpandFull {
 		t.Fatalf("after 1 toggle = %d, want ExpandFull", p.ExpandMode())
 	}
 
 	p.CycleExpand()
+	completeExpandTransition(&p)
 	if p.ExpandMode() != constants.ExpandNormal {
 		t.Fatalf("after 2 toggles = %d, want ExpandNormal", p.ExpandMode())
 	}
@@ -160,7 +167,9 @@ func TestPanel_resetExpand(t *testing.T) {
 	p := panel.NewModel(ctx, "Test", 40, 10)
 
 	p.CycleExpand()
+	completeExpandTransition(&p)
 	p.CycleExpand()
+	completeExpandTransition(&p)
 	p.ResetExpand()
 	if p.ExpandMode() != constants.ExpandNormal {
 		t.Fatalf("after reset = %d, want ExpandNormal", p.ExpandMode())
@@ -212,6 +221,75 @@ func TestPanel_updateForwardsToChild(t *testing.T) {
 	view := p.View()
 	if !strings.Contains(view, "before") {
 		t.Fatalf("expected child content in view after Update, got: %s", view)
+	}
+}
+
+func TestPanel_expandTransition(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+	p.SetContent("content")
+
+	// CycleExpand should start transition, not immediately change mode
+	cmd := p.CycleExpand()
+	if cmd == nil {
+		t.Error("CycleExpand should return a tick command")
+	}
+	// Mode should not have changed yet during transition
+	if p.ExpandMode() != constants.ExpandNormal {
+		t.Errorf("expand mode during transition = %d, want ExpandNormal", p.ExpandMode())
+	}
+
+	// Advance through all frames
+	for {
+		cmd = p.AdvanceExpandTransition()
+		if cmd == nil {
+			break
+		}
+	}
+
+	// After transition completes, mode should be ExpandFull
+	if p.ExpandMode() != constants.ExpandFull {
+		t.Errorf("expand mode after transition = %d, want ExpandFull", p.ExpandMode())
+	}
+}
+
+func TestPanel_SetDrillable(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test Panel [1]", 40, 10)
+	p.SetFocused(true)
+	for p.AdvanceTransition() != nil {
+	}
+	p.SetDrillable(true)
+	p.SetContent("content")
+
+	view := p.View()
+	if !strings.Contains(view, "[Enter]") {
+		t.Errorf("focused drillable panel should show [Enter], got %q", view)
+	}
+}
+
+func TestPanel_SetDrillable_unfocused(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test Panel [1]", 40, 10)
+	p.SetDrillable(true)
+	p.SetContent("content")
+
+	view := p.View()
+	if strings.Contains(view, "[Enter]") {
+		t.Errorf("unfocused drillable panel should NOT show [Enter]")
+	}
+}
+
+func TestPanel_contentLeftPadding(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	p := panel.NewModel(ctx, "Test", 40, 10)
+	p.SetContent("hello")
+
+	view := p.View()
+	// Content should have 1-space left padding applied by the panel.
+	// The body area should contain " hello" (padded).
+	if !strings.Contains(view, " hello") {
+		t.Errorf("expected left-padded content in view, got %q", view)
 	}
 }
 

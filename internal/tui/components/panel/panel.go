@@ -22,6 +22,9 @@ const (
 // TransitionTickMsg signals the panel to advance its border transition animation.
 type TransitionTickMsg struct{}
 
+// ExpandTransitionTickMsg signals the panel to advance its expand/collapse transition.
+type ExpandTransitionTickMsg struct{}
+
 // Model is the panel Bubble Tea model.
 type Model struct {
 	ctx            *tuictx.ProgramContext
@@ -34,8 +37,11 @@ type Model struct {
 	expandMode     constants.ExpandMode
 	viewport       viewport.Model
 	overflow       bool // true when content exceeds panel body height
-	transitioning  bool
-	transitionTick int // 0 to transitionFrames-1
+	drillable        bool // shows [Enter] hint when focused
+	transitioning    bool
+	transitionTick   int // 0 to transitionFrames-1
+	expandTransition int                  // 0 = none, 1-3 = frame number
+	expandTarget     constants.ExpandMode // target mode after transition
 }
 
 // NewModel creates a panel with title and dimensions.
@@ -73,16 +79,36 @@ func (m *Model) SetModel(child tea.Model) {
 // Focused returns whether this panel is focused.
 func (m Model) Focused() bool { return m.focused }
 
-// CycleExpand toggles the expand mode between normal and full.
-func (m *Model) CycleExpand() {
+// CycleExpand toggles the expand mode between normal and full via a transition animation.
+func (m *Model) CycleExpand() tea.Cmd {
 	if m.expandMode == constants.ExpandNormal {
-		m.expandMode = constants.ExpandFull
+		m.expandTarget = constants.ExpandFull
 	} else {
-		m.expandMode = constants.ExpandNormal
+		m.expandTarget = constants.ExpandNormal
 	}
+	m.expandTransition = 1
+	return tea.Tick(transitionInterval, func(time.Time) tea.Msg {
+		return ExpandTransitionTickMsg{}
+	})
 }
 
-// SetExpandFull sets expand mode directly to full.
+// AdvanceExpandTransition progresses the expand animation by one frame.
+func (m *Model) AdvanceExpandTransition() tea.Cmd {
+	if m.expandTransition == 0 {
+		return nil
+	}
+	m.expandTransition++
+	if m.expandTransition > transitionFrames {
+		m.expandTransition = 0
+		m.expandMode = m.expandTarget
+		return nil
+	}
+	return tea.Tick(transitionInterval, func(time.Time) tea.Msg {
+		return ExpandTransitionTickMsg{}
+	})
+}
+
+// SetExpandFull sets expand mode directly to full (no animation).
 func (m *Model) SetExpandFull() {
 	m.expandMode = constants.ExpandFull
 }
@@ -171,6 +197,11 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
 }
 
+// SetDrillable marks the panel as supporting drill-down (shows [Enter] hint when focused).
+func (m *Model) SetDrillable(drillable bool) {
+	m.drillable = drillable
+}
+
 // ScrollDown scrolls the viewport down one line.
 func (m *Model) ScrollDown() {
 	m.viewport.ScrollDown(1)
@@ -195,6 +226,9 @@ func (m Model) View() string {
 		cur, total := m.ScrollPosition()
 		titleText = fmt.Sprintf("%s (%d/%d)", m.title, cur+1, total)
 	}
+	if m.focused && m.drillable {
+		titleText += " " + m.ctx.Styles.Common.FaintTextStyle.Render("[Enter]")
+	}
 
 	titleStyle := m.ctx.Styles.Header.Root
 	header := titleStyle.Render(titleText)
@@ -205,6 +239,7 @@ func (m Model) View() string {
 	} else {
 		body = m.viewport.View()
 	}
+	body = lipgloss.NewStyle().PaddingLeft(1).Render(body)
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	return style.Width(m.width).Render(inner)
