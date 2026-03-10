@@ -3,6 +3,7 @@ package header
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -13,14 +14,15 @@ import (
 
 // Model is the header Bubble Tea model.
 type Model struct {
-	ctx     *tuictx.ProgramContext
-	app     string
-	env     string
-	phase   string
-	status  string
-	elapsed time.Duration
-	spinner spinner.Model
-	active  bool
+	ctx         *tuictx.ProgramContext
+	app         string
+	env         string
+	phase       string
+	status      string
+	elapsed     time.Duration
+	spinner     spinner.Model
+	active      bool
+	breadcrumbs []string
 }
 
 // NewModel creates a header.
@@ -50,6 +52,12 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
 }
 
+// SetBreadcrumbs sets breadcrumb path segments. If non-nil, View renders
+// breadcrumbs instead of the classic "app (env) -- phase" format.
+func (m *Model) SetBreadcrumbs(parts []string) {
+	m.breadcrumbs = parts
+}
+
 // Init returns the spinner tick command if active.
 func (m Model) Init() tea.Cmd {
 	if m.active {
@@ -71,7 +79,22 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 // View renders the header bar.
 func (m Model) View() string {
 	s := m.ctx.Styles.Header
-	left := s.Root.Render(fmt.Sprintf("k6delta: %s (%s) -- %s", m.app, m.env, m.phase))
+
+	var left string
+	if len(m.breadcrumbs) > 0 {
+		sep := s.Context.Render(" > ")
+		parts := make([]string, len(m.breadcrumbs))
+		for i, p := range m.breadcrumbs {
+			if i == 0 {
+				parts[i] = s.Root.Render(p)
+			} else {
+				parts[i] = s.Title.Render(p)
+			}
+		}
+		left = strings.Join(parts, sep)
+	} else {
+		left = s.Root.Render(fmt.Sprintf("k6delta: %s (%s) -- %s", m.app, m.env, m.phase))
+	}
 
 	var right string
 	if m.status != "" {

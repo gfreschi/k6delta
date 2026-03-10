@@ -63,3 +63,34 @@ func TestHeaderSpinnerUpdate(t *testing.T) {
 		t.Fatal("header View() returned empty")
 	}
 }
+
+func TestHeaderBreadcrumbs(t *testing.T) {
+	ctx := tuictx.New(120, 24)
+	h := header.NewModel(ctx, "", "", "")
+
+	h.SetBreadcrumbs([]string{"k6delta", "web", "load"})
+	view := h.View()
+	if !strings.Contains(view, "k6delta") {
+		t.Fatalf("expected 'k6delta' in breadcrumb, got: %s", view)
+	}
+	if !strings.Contains(view, ">") {
+		t.Fatalf("expected '>' separator in breadcrumb, got: %s", view)
+	}
+	if !strings.Contains(view, "web") {
+		t.Fatalf("expected 'web' in breadcrumb, got: %s", view)
+	}
+	if !strings.Contains(view, "load") {
+		t.Fatalf("expected 'load' in breadcrumb, got: %s", view)
+	}
+}
+
+func TestHeaderBreadcrumbsNilFallsBack(t *testing.T) {
+	ctx := tuictx.New(80, 24)
+	h := header.NewModel(ctx, "myapp", "prod", "smoke")
+
+	// No breadcrumbs set -- should render the classic format
+	view := h.View()
+	if !strings.Contains(view, "myapp") {
+		t.Fatalf("expected classic format with app name, got: %s", view)
+	}
+}
