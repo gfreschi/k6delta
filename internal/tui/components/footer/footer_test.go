@@ -99,3 +99,29 @@ func TestFooterKeyHintBackwardCompat(t *testing.T) {
 		t.Fatalf("expected 'export' after SetHints, got: %s", view)
 	}
 }
+
+func TestFooter_ViewLabel(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	f := footer.NewModelWithHints(ctx, []footer.Hint{
+		{Key: "q", Label: "quit", Short: "quit"},
+	})
+	f.SetViewLabel("staging | ecs")
+
+	view := f.View()
+	if !strings.Contains(view, "staging | ecs") {
+		t.Fatalf("expected view label in footer, got: %s", view)
+	}
+}
+
+func TestFooter_ViewLabelEmpty(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	f := footer.NewModelWithHints(ctx, []footer.Hint{
+		{Key: "q", Label: "quit", Short: "quit"},
+	})
+
+	// No view label set -- should render without error
+	view := f.View()
+	if !strings.Contains(view, "quit") {
+		t.Fatalf("expected hints in footer, got: %s", view)
+	}
+}

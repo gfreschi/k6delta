@@ -4,6 +4,7 @@ package footer
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
@@ -33,10 +34,11 @@ type Hint struct {
 
 // Model is the footer Bubble Tea model.
 type Model struct {
-	ctx   *tuictx.ProgramContext
-	hints []Hint
-	width int
-	state FooterState
+	ctx       *tuictx.ProgramContext
+	hints     []Hint
+	width     int
+	state     FooterState
+	viewLabel string
 }
 
 // NewModel creates a footer with legacy KeyHint entries.
@@ -70,6 +72,11 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.width = ctx.ScreenWidth
 }
 
+// SetViewLabel sets the right-aligned context label (e.g., "staging | ecs").
+func (m *Model) SetViewLabel(label string) {
+	m.viewLabel = label
+}
+
 // View renders the footer bar.
 func (m Model) View() string {
 	s := m.ctx.Styles.Footer
@@ -81,7 +88,18 @@ func (m Model) View() string {
 		parts = append(parts, part)
 	}
 	sep := " " + s.Separator.Render(constants.IconBullet) + " "
-	return "  " + strings.Join(parts, sep)
+	left := "  " + strings.Join(parts, sep)
+
+	if m.viewLabel == "" {
+		return left
+	}
+
+	right := s.Action.Render(m.viewLabel)
+	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		return left
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func (m Model) effectiveHints() []Hint {
