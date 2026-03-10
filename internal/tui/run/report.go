@@ -21,6 +21,23 @@ import (
 	"github.com/gfreschi/k6delta/internal/verdict"
 )
 
+// computeVisiblePanels returns indices of panels that have data to display.
+// 0=k6 summary, 1=graphs, 2=infra, 3=events.
+func (m Model) computeVisiblePanels() []int {
+	var panels []int
+	panels = append(panels, 0) // k6 summary always visible
+	if m.hasRPSData || m.hasLatencyData {
+		panels = append(panels, 1)
+	}
+	if m.report != nil && m.report.Infrastructure != nil {
+		panels = append(panels, 2)
+	}
+	if len(m.activities.ServiceScaling) > 0 || len(m.activities.NodeScaling) > 0 || len(m.activities.Alarms) > 0 {
+		panels = append(panels, 3)
+	}
+	return panels
+}
+
 func (m Model) renderReport() string {
 	s := m.ctx.Styles
 	var sections []string
@@ -192,7 +209,13 @@ func (m *Model) initDashboard() {
 		m.hasHTMLFile = true
 	}
 
-	m.focusMgr = focus.New(4)
+	m.k6Panel.SetDrillable(true)
+	m.graphsPanel.SetDrillable(true)
+	m.infraPanel.SetDrillable(true)
+	m.eventsPanel.SetDrillable(true)
+
+	m.visiblePanels = m.computeVisiblePanels()
+	m.focusMgr = focus.New(len(m.visiblePanels))
 	m.k6Panel.SetFocused(true)
 
 	m.footerComp.SetHints([]footer.KeyHint{
@@ -256,44 +279,99 @@ func (m Model) viewReportDashboard() string {
 	verdictTile := m.renderVerdictTile()
 	vitalSigns := m.renderVitalSignsStrip()
 
-	focused := m.focusMgr.Current()
-	panels := [4]panel.Model{m.k6Panel, m.graphsPanel, m.infraPanel, m.eventsPanel}
+	allPanels := [4]panel.Model{m.k6Panel, m.graphsPanel, m.infraPanel, m.eventsPanel}
+	focusIdx := m.focusedPanelIndex()
 
 	// Full expand: only the focused panel renders
-	if panels[focused].ExpandMode() == constants.ExpandFull {
-		return lipgloss.JoinVertical(lipgloss.Left, panels[focused].View(), verdictTile)
+	if focusIdx >= 0 && focusIdx < len(allPanels) && allPanels[focusIdx].ExpandMode() == constants.ExpandFull {
+		return lipgloss.JoinVertical(lipgloss.Left, allPanels[focusIdx].View(), verdictTile)
 	}
+
+	hasGraphs := m.isPanelVisible(1)
+	hasInfra := m.isPanelVisible(2)
+	hasEvents := m.isPanelVisible(3)
 
 	switch {
 	case width >= constants.BreakpointNarrow:
-		topRow := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.k6Panel.View(),
-			m.graphsPanel.View(),
-		)
-		bottomRow := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.infraPanel.View(),
-			m.eventsPanel.View(),
-		)
-		return lipgloss.JoinVertical(lipgloss.Left, vitalSigns, topRow, bottomRow, verdictTile)
+		var sections []string
+		sections = append(sections, vitalSigns)
+
+		// Top row
+		if hasGraphs {
+			sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top,
+				m.k6Panel.View(), m.graphsPanel.View()))
+		} else {
+			sections = append(sections, m.k6Panel.View())
+		}
+
+		// Bottom row
+		if hasInfra && hasEvents {
+			sections = append(sections, lipgloss.JoinHorizontal(lipgloss.Top,
+				m.infraPanel.View(), m.eventsPanel.View()))
+		} else if hasInfra {
+			sections = append(sections, m.infraPanel.View())
+		} else if hasEvents {
+			sections = append(sections, m.eventsPanel.View())
+		}
+
+		sections = append(sections, verdictTile)
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+
 	case width >= constants.BreakpointStacked:
-		return lipgloss.JoinVertical(lipgloss.Left,
-			vitalSigns,
-			m.k6Panel.View(),
-			m.graphsPanel.View(),
-			m.infraPanel.View(),
-			m.eventsPanel.View(),
-			verdictTile,
-		)
+		var sections []string
+		sections = append(sections, vitalSigns, m.k6Panel.View())
+		if hasGraphs {
+			sections = append(sections, m.graphsPanel.View())
+		}
+		if hasInfra {
+			sections = append(sections, m.infraPanel.View())
+		}
+		if hasEvents {
+			sections = append(sections, m.eventsPanel.View())
+		}
+		sections = append(sections, verdictTile)
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+
 	default:
 		return m.renderReport()
 	}
 }
 
+// focusedPanelIndex returns the actual panel index (0-3) for the current focus position.
+func (m Model) focusedPanelIndex() int {
+	idx := m.focusMgr.Current()
+	if idx >= 0 && idx < len(m.visiblePanels) {
+		return m.visiblePanels[idx]
+	}
+	return 0
+}
+
+// isPanelVisible returns true if the given panel index is in visiblePanels.
+func (m Model) isPanelVisible(panelIdx int) bool {
+	for _, v := range m.visiblePanels {
+		if v == panelIdx {
+			return true
+		}
+	}
+	return false
+}
+
+// visibleFocusIndex returns the focus index for a given panel index, or -1.
+func (m Model) visibleFocusIndex(panelIdx int) int {
+	for i, v := range m.visiblePanels {
+		if v == panelIdx {
+			return i
+		}
+	}
+	return -1
+}
+
 func (m *Model) updateDashboardFocus() tea.Cmd {
-	m.k6Panel.SetFocused(m.focusMgr.IsFocused(0))
-	m.graphsPanel.SetFocused(m.focusMgr.IsFocused(1))
-	m.infraPanel.SetFocused(m.focusMgr.IsFocused(2))
-	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(3))
+	focusIdx := m.focusedPanelIndex()
+	m.k6Panel.SetFocused(focusIdx == 0)
+	m.graphsPanel.SetFocused(focusIdx == 1)
+	m.infraPanel.SetFocused(focusIdx == 2)
+	m.eventsPanel.SetFocused(focusIdx == 3)
 	return tea.Batch(
 		m.k6Panel.TransitionCmd(),
 		m.graphsPanel.TransitionCmd(),
@@ -302,12 +380,13 @@ func (m *Model) updateDashboardFocus() tea.Cmd {
 	)
 }
 
-func (m *Model) cycleExpandFocusedPanel() {
-	panels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
-	idx := m.focusMgr.Current()
-	if idx >= 0 && idx < len(panels) {
-		panels[idx].CycleExpand()
+func (m *Model) cycleExpandFocusedPanel() tea.Cmd {
+	allPanels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+	panelIdx := m.focusedPanelIndex()
+	if panelIdx >= 0 && panelIdx < len(allPanels) {
+		return allPanels[panelIdx].CycleExpand()
 	}
+	return nil
 }
 
 func (m Model) anyPanelExpanded() bool {
@@ -318,10 +397,10 @@ func (m Model) anyPanelExpanded() bool {
 }
 
 func (m *Model) expandFocusedPanelFull() {
-	panels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
-	idx := m.focusMgr.Current()
-	if idx >= 0 && idx < len(panels) {
-		panels[idx].SetExpandFull()
+	allPanels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+	panelIdx := m.focusedPanelIndex()
+	if panelIdx >= 0 && panelIdx < len(allPanels) {
+		allPanels[panelIdx].SetExpandFull()
 	}
 }
 
@@ -333,20 +412,12 @@ func (m *Model) resetAllPanelExpand() {
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {
-	var p *panel.Model
-	switch m.focusMgr.Current() {
-	case 0:
-		p = &m.k6Panel
-	case 1:
-		p = &m.graphsPanel
-	case 2:
-		p = &m.infraPanel
-	case 3:
-		p = &m.eventsPanel
-	}
-	if p == nil {
+	allPanels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+	panelIdx := m.focusedPanelIndex()
+	if panelIdx < 0 || panelIdx >= len(allPanels) {
 		return
 	}
+	p := allPanels[panelIdx]
 	if dir > 0 {
 		p.ScrollDown()
 	} else {
@@ -508,7 +579,10 @@ func (m *Model) populateReportCharts() {
 
 func (m Model) renderGraphsPanelContent() string {
 	if !m.hasRPSData && !m.hasLatencyData {
-		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No metric data for graphs", "")
+		styles := m.ctx.Styles.Common
+		chartW := m.ctx.ContentWidth/2 - constants.PanelBorderWidth - constants.PanelInnerPadding
+		return common.SkeletonChart(styles, chartW, 6) + "\n\n" +
+			styles.FaintTextStyle.Render("No metric data for graphs")
 	}
 
 	var sections []string
@@ -697,7 +771,11 @@ func (m Model) buildVitalSignsStrip() string {
 // renderInfraTileGrid renders infrastructure metrics as KPI tiles.
 func (m Model) renderInfraTileGrid() string {
 	if m.report == nil || m.report.Infrastructure == nil {
-		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyPending, "Infrastructure metrics pending", "")
+		styles := m.ctx.Styles.Common
+		infraW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
+		innerW := infraW - constants.PanelBorderWidth - constants.PanelInnerPadding
+		return common.SkeletonTileRow(styles, innerW, 4) + "\n\n" +
+			styles.FaintTextStyle.Render("Infrastructure metrics pending")
 	}
 	infra := m.report.Infrastructure
 

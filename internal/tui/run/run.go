@@ -136,6 +136,19 @@ type Model struct {
 	// Status bar (live mode)
 	statusBar statusbar.Model
 
+	// Infrastructure polling backoff
+	infraStale       bool
+	infraPollBackoff time.Duration
+
+	// Idle detection for live charts
+	lastK6DataTime time.Time
+
+	// Phase transition animation (0 = none, 1 = fading, 2 = report shown)
+	transitionFrame int
+
+	// Adaptive panel visibility (indices of panels with data)
+	visiblePanels []int
+
 	// Health micro-tiles (post-k6 summary)
 	healthTiles      []metriccard.Model
 	healthTilesReady bool
@@ -263,11 +276,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Help overlay toggle (available in any phase)
 		if key.Matches(msg, keys.Keys.Help) {
 			m.showHelp = !m.showHelp
+			if m.showHelp {
+				m.footerComp.SetState(footer.StateHelp)
+			} else {
+				m.footerComp.SetState(footer.StateNormal)
+			}
 			return m, nil
 		}
 		if m.showHelp {
 			if key.Matches(msg, keys.Keys.Escape) {
 				m.showHelp = false
+				m.footerComp.SetState(footer.StateNormal)
 				return m, nil
 			}
 			return m, nil
@@ -287,26 +306,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.scrollFocusedPanel(-1)
 				return m, nil
 			case key.Matches(msg, keys.Keys.Jump1):
-				m.focusMgr.SetFocus(0)
-				return m, m.updateDashboardFocus()
+				if fi := m.visibleFocusIndex(0); fi >= 0 {
+					m.focusMgr.SetFocus(fi)
+					return m, m.updateDashboardFocus()
+				}
 			case key.Matches(msg, keys.Keys.Jump2):
-				m.focusMgr.SetFocus(1)
-				return m, m.updateDashboardFocus()
+				if fi := m.visibleFocusIndex(1); fi >= 0 {
+					m.focusMgr.SetFocus(fi)
+					return m, m.updateDashboardFocus()
+				}
 			case key.Matches(msg, keys.Keys.Jump3):
-				m.focusMgr.SetFocus(2)
-				return m, m.updateDashboardFocus()
+				if fi := m.visibleFocusIndex(2); fi >= 0 {
+					m.focusMgr.SetFocus(fi)
+					return m, m.updateDashboardFocus()
+				}
 			case key.Matches(msg, keys.Keys.Jump4):
-				m.focusMgr.SetFocus(3)
-				return m, m.updateDashboardFocus()
+				if fi := m.visibleFocusIndex(3); fi >= 0 {
+					m.focusMgr.SetFocus(fi)
+					return m, m.updateDashboardFocus()
+				}
 			case key.Matches(msg, keys.Keys.Expand):
-				m.cycleExpandFocusedPanel()
-				return m, nil
+				cmd := m.cycleExpandFocusedPanel()
+				m.footerComp.SetState(footer.StateExpanded)
+				return m, cmd
 			case key.Matches(msg, keys.Keys.Enter):
 				m.expandFocusedPanelFull()
+				m.footerComp.SetState(footer.StateExpanded)
 				return m, nil
 			case key.Matches(msg, keys.Keys.Escape):
 				if m.anyPanelExpanded() {
 					m.resetAllPanelExpand()
+					m.footerComp.SetState(footer.StateNormal)
 					return m, nil
 				}
 			case key.Matches(msg, keys.RunKeys.Export):
@@ -447,6 +477,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case k6PointMsg:
+		m.lastK6DataTime = time.Now()
+		m.rpsChart.SetIdle(false)
+		m.latencyChart.SetIdle(false)
 		m.handleK6Point(msg.point)
 		if m.liveFocusMgr != nil {
 			m.updateLivePanelContent()
@@ -454,10 +487,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.waitForK6Point()
 
 	case infraTickMsg:
+		var pulseCmds tea.Cmd
 		if msg.err != nil {
 			m.infraError = msg.err
+			m.infraStale = true
+			// Exponential backoff: 20s -> 40s -> 60s (capped)
+			if m.infraPollBackoff == 0 {
+				m.infraPollBackoff = 20 * time.Second
+			} else if m.infraPollBackoff < 60*time.Second {
+				m.infraPollBackoff = min(m.infraPollBackoff*2, 60*time.Second)
+			}
+			m.markInfraTilesStale(true)
 		} else {
 			m.infraError = nil
+			m.infraStale = false
+			m.infraPollBackoff = 0
+			m.markInfraTilesStale(false)
 			// Detect scaling events for chart annotations
 			if m.prevLiveSnapshot.TaskRunning != 0 && msg.snapshot.TaskRunning != m.prevLiveSnapshot.TaskRunning {
 				label := fmt.Sprintf("scale %d\u2192%d", m.prevLiveSnapshot.TaskRunning, msg.snapshot.TaskRunning)
@@ -471,16 +516,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.prevLiveSnapshot = msg.snapshot
 			m.liveMetrics = msg.metrics
-			m.updateTilesFromMetrics(msg.metrics)
-			m.updateTilesFromSnapshot(msg.snapshot)
+			pulseCmd1 := m.updateTilesFromMetrics(msg.metrics)
+			pulseCmd2 := m.updateTilesFromSnapshot(msg.snapshot)
+			pulseCmds = tea.Batch(pulseCmd1, pulseCmd2)
 		}
 		if m.liveMode {
+			// Detect idle charts when no k6 data flows for >3s
+			if !m.lastK6DataTime.IsZero() && time.Since(m.lastK6DataTime) > 3*time.Second {
+				m.rpsChart.SetIdle(true)
+				m.latencyChart.SetIdle(true)
+			}
 			if m.liveFocusMgr != nil {
 				m.updateLivePanelContent()
 			}
-			return m, infraPollCmd(context.Background(), m.provider, 15*time.Second)
+			interval := 15 * time.Second
+			if m.infraPollBackoff > 0 {
+				interval = m.infraPollBackoff
+			}
+			return m, tea.Batch(pulseCmds, infraPollCmd(context.Background(), m.provider, interval))
 		}
-		return m, nil
+		return m, pulseCmds
 
 	case k6DoneMsg:
 		if m.liveRPSCount > 0 && !m.liveRPSTime.IsZero() {
@@ -541,10 +596,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}, m.verdictCfg)
 		m.computedVerdict = &v
 		flashCmd := m.stepper.MarkDone(stepReport, "written")
-		m.currentPhase = phaseDone
-		m.initDashboard()
-		m.initHealthTiles()
-		return m, flashCmd
+		// Start transition: frame 1 = fading stepper
+		m.transitionFrame = 1
+		return m, tea.Batch(flashCmd, tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+			return transitionTickMsg{frame: 2}
+		}))
+
+	case transitionTickMsg:
+		m.transitionFrame = msg.frame
+		if msg.frame == 2 {
+			// Switch to report dashboard
+			m.currentPhase = phaseDone
+			m.initDashboard()
+			m.initHealthTiles()
+			return m, tea.Tick(500*time.Millisecond, func(time.Time) tea.Msg {
+				return transitionTickMsg{frame: 0}
+			})
+		}
+		// frame 0: transition complete
+		m.transitionFrame = 0
+		return m, nil
 
 	case exportDoneMsg:
 		m.footerComp.SetHints([]footer.KeyHint{
@@ -565,6 +636,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case stepper.ClearFlashMsg:
 		m.stepper.ClearFlash(msg.Index)
+		return m, nil
+
+	case panel.ExpandTransitionTickMsg:
+		allPanels := []*panel.Model{&m.k6Panel, &m.graphsPanel, &m.infraPanel, &m.eventsPanel}
+		var cmds []tea.Cmd
+		for _, p := range allPanels {
+			if cmd := p.AdvanceExpandTransition(); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
+		}
+		return m, tea.Batch(cmds...)
+
+	case metriccard.ClearPulseMsg:
+		tiles := []*metriccard.Model{&m.cpuTile, &m.memTile, &m.reservTile, &m.tasksTile, &m.asgTile}
+		for _, t := range tiles {
+			if t.Label() == msg.ID {
+				t.ClearPulse()
+			}
+		}
 		return m, nil
 
 	case panel.TransitionTickMsg:
@@ -620,6 +710,12 @@ func (m Model) View() string {
 	if m.err != nil {
 		sections = append(sections, cs.ErrorStyle.Render("Error: "+m.err.Error()), "")
 		sections = append(sections, m.footerComp.View())
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
+	}
+
+	if m.transitionFrame == 1 {
+		// Fading: show stepper with "Building report..." in faint
+		sections = append(sections, m.ctx.Styles.Common.FaintTextStyle.Render("Building report..."))
 		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	}
 

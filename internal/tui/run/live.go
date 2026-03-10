@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/k6"
@@ -35,7 +36,8 @@ func (m *Model) handleK6Point(point k6.K6Point) {
 	}
 }
 
-func (m *Model) updateTilesFromMetrics(metrics []provider.MetricResult) {
+func (m *Model) updateTilesFromMetrics(metrics []provider.MetricResult) tea.Cmd {
+	var cmds []tea.Cmd
 	for _, mr := range metrics {
 		if len(mr.Values) == 0 {
 			continue
@@ -43,30 +45,43 @@ func (m *Model) updateTilesFromMetrics(metrics []provider.MetricResult) {
 		latest := mr.Values[len(mr.Values)-1]
 		switch mr.ID {
 		case "service_cpu":
-			m.cpuTile.SetValue(latest, 100.0)
+			if cmd := m.cpuTile.SetValue(latest, 100.0); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			m.cpuTile.PushSparkline(latest)
 		case "service_memory":
-			m.memTile.SetValue(latest, 100.0)
+			if cmd := m.memTile.SetValue(latest, 100.0); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			m.memTile.PushSparkline(latest)
 		case "capacity_provider_reservation":
-			m.reservTile.SetValue(latest, 100.0)
+			if cmd := m.reservTile.SetValue(latest, 100.0); cmd != nil {
+				cmds = append(cmds, cmd)
+			}
 			m.reservTile.PushSparkline(latest)
 		}
 	}
+	return tea.Batch(cmds...)
 }
 
-func (m *Model) updateTilesFromSnapshot(snap provider.Snapshot) {
-	m.tasksTile.SetValue(float64(snap.TaskRunning), float64(max(snap.TaskDesired, 1)))
+func (m *Model) updateTilesFromSnapshot(snap provider.Snapshot) tea.Cmd {
+	var cmds []tea.Cmd
+	if cmd := m.tasksTile.SetValue(float64(snap.TaskRunning), float64(max(snap.TaskDesired, 1))); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if m.preSnapshot.TaskRunning > 0 {
 		m.tasksTile.SetDelta(fmt.Sprintf("%d\u2192%d", m.preSnapshot.TaskRunning, snap.TaskRunning))
 		if snap.TaskRunning < m.preSnapshot.TaskRunning {
 			m.tasksTile.SetSeverity(metriccard.SeverityWarn)
 		}
 	}
-	m.asgTile.SetValue(float64(snap.ASGInstances), float64(max(snap.ASGDesired, 1)))
+	if cmd := m.asgTile.SetValue(float64(snap.ASGInstances), float64(max(snap.ASGDesired, 1))); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if m.preSnapshot.ASGInstances > 0 {
 		m.asgTile.SetDelta(fmt.Sprintf("%d\u2192%d", m.preSnapshot.ASGInstances, snap.ASGInstances))
 	}
+	return tea.Batch(cmds...)
 }
 
 func fmtElapsed(d time.Duration) string {
@@ -93,6 +108,10 @@ func (m *Model) updateStatusBar() {
 			items = append(items, statusbar.Item{Label: "CPU", Value: fmt.Sprintf("%.0f%%", latest)})
 			break
 		}
+	}
+
+	if m.infraStale {
+		items = append(items, statusbar.Item{Label: "infra", Value: "(stale)"})
 	}
 
 	m.statusBar.SetItems(items)
@@ -203,6 +222,14 @@ func (m Model) viewLiveFallback() string {
 	sections = append(sections, "", m.footerComp.View())
 
 	return lipgloss.JoinVertical(lipgloss.Left, sections...)
+}
+
+func (m *Model) markInfraTilesStale(stale bool) {
+	m.cpuTile.SetStale(stale)
+	m.memTile.SetStale(stale)
+	m.reservTile.SetStale(stale)
+	m.tasksTile.SetStale(stale)
+	m.asgTile.SetStale(stale)
 }
 
 func (m Model) renderLiveInfraTiles() string {

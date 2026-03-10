@@ -39,3 +39,5 @@ type k6PointMsg struct{ point k6.K6Point }
 type exportDoneMsg struct{ path string }
 
 type openDoneMsg struct{ path string }
+
+type transitionTickMsg struct{ frame int }
