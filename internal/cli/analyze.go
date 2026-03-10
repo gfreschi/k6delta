@@ -25,6 +25,7 @@ func NewAnalyzeCmd() *cobra.Command {
 		jsonOutput bool
 		outputFile string
 		ciMode     bool
+		refreshSec int
 	)
 
 	cmd := &cobra.Command{
@@ -56,7 +57,7 @@ func NewAnalyzeCmd() *cobra.Command {
 				return analyzetui.RunJSON(resolved, prov, startTime, endTime, period, outputFile)
 			}
 
-			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, jsonOutput, outputFile)
+			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, jsonOutput, outputFile, refreshSec)
 			p := tea.NewProgram(m)
 			if ps, ok := prov.(progressSetter); ok {
 				ps.SetOnProgress(func(id string, current, total int) {
@@ -81,6 +82,7 @@ func NewAnalyzeCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "output JSON instead of TUI")
 	cmd.Flags().StringVar(&outputFile, "output", "", "write JSON output to file")
 	cmd.Flags().BoolVar(&ciMode, "ci", false, "CI mode: JSON to stdout, no TUI")
+	cmd.Flags().IntVar(&refreshSec, "refresh", 0, "auto-refresh interval in seconds (0=disabled)")
 
 	_ = cmd.MarkFlagRequired("app")
 

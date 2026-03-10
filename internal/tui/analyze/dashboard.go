@@ -20,6 +20,12 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/constants"
 )
 
+func (m Model) hasActivities() bool {
+	return len(m.activities.ServiceScaling) > 0 ||
+		len(m.activities.NodeScaling) > 0 ||
+		len(m.activities.Alarms) > 0
+}
+
 func (m *Model) initDashboard() {
 	w := m.ctx.ContentWidth
 	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 30)
@@ -27,33 +33,71 @@ func (m *Model) initDashboard() {
 	m.statePanel = panel.NewModel(m.ctx, "State [1]", w, topH)
 	m.statePanel.SetContent(m.renderStateContent())
 
-	metricsW := w * constants.PanelSplitPct / 100
-	eventsW := w - metricsW
+	if m.hasActivities() {
+		metricsW := w * constants.PanelSplitPct / 100
+		eventsW := w - metricsW
 
-	m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, bottomH)
-	m.metricsPanel.SetContent(m.renderMetricsContent())
+		m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", metricsW, bottomH)
+		m.metricsPanel.SetContent(m.renderMetricsContent())
 
-	m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, bottomH)
-	m.eventsPanel.SetContent(m.renderActivitiesTimeline())
+		m.eventsPanel = panel.NewModel(m.ctx, "Activities [3]", eventsW, bottomH)
+		m.eventsPanel.SetContent(m.renderActivitiesTimeline())
 
-	m.focusMgr = focus.New(3)
+		m.focusMgr = focus.New(3)
+	} else {
+		// No activities: metrics gets full bottom width
+		m.metricsPanel = panel.NewModel(m.ctx, "Metrics [2]", w, bottomH)
+		m.metricsPanel.SetContent(m.renderMetricsContent())
+
+		m.focusMgr = focus.New(2)
+	}
 	m.statePanel.SetFocused(true)
 
-	m.footerComp.SetHints([]footer.KeyHint{
+	m.metricsPanel.SetDrillable(true)
+	if m.hasActivities() {
+		m.eventsPanel.SetDrillable(true)
+	}
+	m.updateFooterHints()
+}
+
+func (m *Model) updateFooterHints() {
+	jumpHint := "1-2"
+	if m.hasActivities() {
+		jumpHint = "1-3"
+	}
+	hints := []footer.KeyHint{
 		{Key: "q", Action: "quit"},
 		{Key: "tab", Action: "panel"},
-		{Key: "1-3", Action: "jump"},
+		{Key: jumpHint, Action: "jump"},
 		{Key: "+", Action: "expand"},
-		{Key: "↑↓", Action: "scroll"},
+		{Key: "\u2191\u2193", Action: "scroll"},
 		{Key: "e", Action: "export"},
 		{Key: "?", Action: "help"},
-	})
+	}
+	if m.refreshInterval > 0 {
+		action := fmt.Sprintf("refresh (%ds)", m.refreshCountdown)
+		hints = append(hints, footer.KeyHint{Key: "r", Action: action})
+	}
+	m.footerComp.SetHints(hints)
+}
+
+func (m *Model) refreshDashboard() {
+	m.statePanel.SetContent(m.renderStateContent())
+	m.metricsPanel.SetContent(m.renderMetricsContent())
+	if m.hasActivities() {
+		m.eventsPanel.SetContent(m.renderActivitiesTimeline())
+	}
 }
 
 func (m *Model) resizeDashboardPanels() {
 	w := m.ctx.ContentWidth
 	topH, bottomH := constants.CalcPanelHeights(m.ctx.ContentHeight, 30)
 	m.statePanel.SetDimensions(w, topH)
+
+	if !m.hasActivities() {
+		m.metricsPanel.SetDimensions(w, bottomH)
+		return
+	}
 
 	switch {
 	case w >= constants.BreakpointSplit:
@@ -74,24 +118,38 @@ func (m *Model) resizeDashboardPanels() {
 
 func (m Model) viewDashboard() string {
 	width := m.ctx.ContentWidth
-	focused := m.focusMgr.Current()
-	panels := [3]panel.Model{m.statePanel, m.metricsPanel, m.eventsPanel}
 
-	// Full expand: only the focused panel renders
-	if panels[focused].ExpandMode() == constants.ExpandFull {
-		return panels[focused].View()
+	// Determine which panels exist
+	hasAct := m.hasActivities()
+	focused := m.focusMgr.Current()
+
+	// Collect visible panels for expand check
+	var visiblePanels []panel.Model
+	visiblePanels = append(visiblePanels, m.statePanel, m.metricsPanel)
+	if hasAct {
+		visiblePanels = append(visiblePanels, m.eventsPanel)
+	}
+
+	if focused >= 0 && focused < len(visiblePanels) && visiblePanels[focused].ExpandMode() == constants.ExpandFull {
+		return visiblePanels[focused].View()
 	}
 
 	switch {
 	case width >= constants.BreakpointNarrow:
-		middle := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.metricsPanel.View(),
-			m.eventsPanel.View(),
-		)
-		return lipgloss.JoinVertical(lipgloss.Left, m.statePanel.View(), middle)
+		if hasAct {
+			middle := lipgloss.JoinHorizontal(lipgloss.Top,
+				m.metricsPanel.View(),
+				m.eventsPanel.View(),
+			)
+			return lipgloss.JoinVertical(lipgloss.Left, m.statePanel.View(), middle)
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, m.statePanel.View(), m.metricsPanel.View())
 	case width >= constants.BreakpointStacked:
-		return lipgloss.JoinVertical(lipgloss.Left,
-			m.statePanel.View(), m.metricsPanel.View(), m.eventsPanel.View())
+		sections := []string{m.statePanel.View(), m.metricsPanel.View()}
+		if hasAct {
+			sections = append(sections, m.eventsPanel.View())
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	default:
 		return m.renderRawDisplay()
 	}
@@ -100,20 +158,26 @@ func (m Model) viewDashboard() string {
 func (m *Model) updateDashboardFocus() tea.Cmd {
 	m.statePanel.SetFocused(m.focusMgr.IsFocused(0))
 	m.metricsPanel.SetFocused(m.focusMgr.IsFocused(1))
-	m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
-	return tea.Batch(
+	if m.hasActivities() {
+		m.eventsPanel.SetFocused(m.focusMgr.IsFocused(2))
+	}
+	cmds := []tea.Cmd{
 		m.statePanel.TransitionCmd(),
 		m.metricsPanel.TransitionCmd(),
-		m.eventsPanel.TransitionCmd(),
-	)
+	}
+	if m.hasActivities() {
+		cmds = append(cmds, m.eventsPanel.TransitionCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
-func (m *Model) cycleExpandFocusedPanel() {
+func (m *Model) cycleExpandFocusedPanel() tea.Cmd {
 	panels := []*panel.Model{&m.statePanel, &m.metricsPanel, &m.eventsPanel}
 	idx := m.focusMgr.Current()
 	if idx >= 0 && idx < len(panels) {
-		panels[idx].CycleExpand()
+		return panels[idx].CycleExpand()
 	}
+	return nil
 }
 
 func (m Model) anyPanelExpanded() bool {
@@ -181,7 +245,11 @@ func (m Model) renderStateContent() string {
 
 func (m Model) renderMetricsContent() string {
 	if len(m.metrics) == 0 {
-		return common.RenderEmptyState(m.ctx.Styles.Common, common.EmptyNoData, "No metrics available", "")
+		styles := m.ctx.Styles.Common
+		metricsW := m.ctx.ContentWidth * constants.PanelSplitPct / 100
+		innerW := metricsW - constants.PanelBorderWidth - constants.PanelInnerPadding
+		return common.SkeletonTileRow(styles, innerW, 3) + "\n\n" +
+			styles.FaintTextStyle.Render("No metrics available")
 	}
 
 	tileW := constants.TileWidthNormal
@@ -342,6 +410,13 @@ func (m Model) renderRawDisplay() string {
 }
 
 func (m Model) renderHelpOverlay() string {
+	actionKeys := [][2]string{
+		{"e", "Export JSON report"},
+	}
+	if m.refreshInterval > 0 {
+		actionKeys = append(actionKeys, [2]string{"r", "Refresh data now"})
+	}
+
 	return overlay.RenderHelp(m.ctx, []overlay.HelpGroup{
 		{Title: "Navigation", Keys: [][2]string{
 			{"q", "Quit"},
@@ -352,11 +427,9 @@ func (m Model) renderHelpOverlay() string {
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-3", "Jump to panel"},
 			{"+", "Toggle expand (normal / full)"},
-			{"↑↓ / j k", "Scroll focused panel"},
+			{"\u2191\u2193 / j k", "Scroll focused panel"},
 		}},
-		{Title: "Actions", Keys: [][2]string{
-			{"e", "Export JSON report"},
-		}},
+		{Title: "Actions", Keys: actionKeys},
 	})
 }
 

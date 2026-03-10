@@ -14,3 +14,12 @@ type stateDoneMsg struct{ snapshot provider.Snapshot }
 type metricsDoneMsg struct{ metrics []provider.MetricResult }
 type activitiesDoneMsg struct{ activities provider.Activities }
 type errMsg struct{ err error }
+
+type refreshTickMsg struct{}
+
+type refreshDataMsg struct {
+	snapshot   provider.Snapshot
+	metrics    []provider.MetricResult
+	activities provider.Activities
+	err        error
+}

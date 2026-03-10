@@ -75,10 +75,15 @@ type Model struct {
 
 	// Help overlay
 	showHelp bool
+
+	// Auto-refresh
+	refreshInterval  time.Duration
+	refreshCountdown int // seconds until next refresh
 }
 
 // NewModel creates a new analyze TUI model.
-func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, jsonOutput bool, outputFile string) Model {
+// An optional refreshSec parameter enables auto-refresh (0 = disabled).
+func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, jsonOutput bool, outputFile string, refreshSec ...int) Model {
 	ctx := tuictx.New(80, 24)
 
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot),
@@ -91,20 +96,26 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, en
 		{Key: "q", Action: "quit"},
 	})
 
+	var interval time.Duration
+	if len(refreshSec) > 0 && refreshSec[0] > 0 {
+		interval = time.Duration(refreshSec[0]) * time.Second
+	}
+
 	return Model{
-		app:        app,
-		prov:       prov,
-		startTime:  startTime,
-		endTime:    endTime,
-		period:     period,
-		jsonOutput: jsonOutput,
-		outputFile: outputFile,
-		ctx:        ctx,
-		stepper:    st,
-		headerComp: hdr,
-		footerComp: ftr,
-		phase:      phaseAuth,
-		spinner:    s,
+		app:             app,
+		prov:            prov,
+		startTime:       startTime,
+		endTime:         endTime,
+		period:          period,
+		jsonOutput:      jsonOutput,
+		outputFile:      outputFile,
+		ctx:             ctx,
+		stepper:         st,
+		headerComp:      hdr,
+		footerComp:      ftr,
+		phase:           phaseAuth,
+		spinner:         s,
+		refreshInterval: interval,
 	}
 }
 
@@ -117,11 +128,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if key.Matches(msg, keys.Keys.Help) {
 			m.showHelp = !m.showHelp
+			if m.showHelp {
+				m.footerComp.SetState(footer.StateHelp)
+			} else {
+				m.footerComp.SetState(footer.StateNormal)
+			}
 			return m, nil
 		}
 		if m.showHelp {
 			if key.Matches(msg, keys.Keys.Escape) {
 				m.showHelp = false
+				m.footerComp.SetState(footer.StateNormal)
 				return m, nil
 			}
 			return m, nil
@@ -150,16 +167,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusMgr.SetFocus(2)
 				return m, m.updateDashboardFocus()
 			case key.Matches(msg, keys.Keys.Expand):
-				m.cycleExpandFocusedPanel()
-				return m, nil
+				cmd := m.cycleExpandFocusedPanel()
+				m.footerComp.SetState(footer.StateExpanded)
+				return m, cmd
 			case key.Matches(msg, keys.Keys.Enter):
 				m.expandFocusedPanelFull()
+				m.footerComp.SetState(footer.StateExpanded)
 				return m, nil
 			case key.Matches(msg, keys.Keys.Escape):
 				if m.anyPanelExpanded() {
 					m.resetAllPanelExpand()
+					m.footerComp.SetState(footer.StateNormal)
 					return m, nil
 				}
+			case key.Matches(msg, keys.AnalyzeKeys.Refresh):
+				if m.refreshInterval > 0 {
+					m.refreshCountdown = 0
+					m.headerComp.SetActive(true)
+					return m, m.refreshData()
+				}
+				return m, nil
 			case key.Matches(msg, keys.AnalyzeKeys.Export):
 				if m.outputFile != "" {
 					if err := m.writeOutputFile(); err != nil {
@@ -235,11 +262,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.err = err
 			}
 		}
-		return m, flashCmd
+
+		cmds := []tea.Cmd{flashCmd}
+		if m.refreshInterval > 0 {
+			m.refreshCountdown = int(m.refreshInterval.Seconds())
+			cmds = append(cmds, tea.Tick(time.Second, func(time.Time) tea.Msg {
+				return refreshTickMsg{}
+			}))
+		}
+		return m, tea.Batch(cmds...)
 
 	case stepper.ClearFlashMsg:
 		m.stepper.ClearFlash(msg.Index)
 		return m, nil
+
+	case refreshTickMsg:
+		if m.refreshInterval == 0 {
+			return m, nil
+		}
+		m.refreshCountdown--
+		if m.refreshCountdown <= 0 {
+			m.refreshCountdown = int(m.refreshInterval.Seconds())
+			m.headerComp.SetActive(true)
+			m.updateFooterHints()
+			return m, m.refreshData()
+		}
+		m.updateFooterHints()
+		return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+			return refreshTickMsg{}
+		})
+
+	case refreshDataMsg:
+		m.headerComp.SetActive(false)
+		if msg.err != nil {
+			m.updateFooterHints()
+			return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+				return refreshTickMsg{}
+			})
+		}
+		m.snapshot = msg.snapshot
+		m.metrics = msg.metrics
+		m.activities = msg.activities
+		m.refreshDashboard()
+		m.updateFooterHints()
+		return m, tea.Tick(time.Second, func(time.Time) tea.Msg {
+			return refreshTickMsg{}
+		})
 
 	case panel.TransitionTickMsg:
 		if m.focusMgr != nil {
@@ -247,6 +315,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.statePanel.AdvanceTransition(),
 				m.metricsPanel.AdvanceTransition(),
 				m.eventsPanel.AdvanceTransition(),
+			)
+			return m, cmd
+		}
+
+	case panel.ExpandTransitionTickMsg:
+		if m.focusMgr != nil {
+			cmd := tea.Batch(
+				m.statePanel.AdvanceExpandTransition(),
+				m.metricsPanel.AdvanceExpandTransition(),
+				m.eventsPanel.AdvanceExpandTransition(),
 			)
 			return m, cmd
 		}
@@ -319,6 +397,42 @@ func (m Model) fetchActivities() tea.Cmd {
 			return errMsg{err: fmt.Errorf("fetch activities: %w", err)}
 		}
 		return activitiesDoneMsg{activities: activities}
+	}
+}
+
+func (m Model) refreshData() tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		snap, err := m.prov.TakeSnapshot(ctx)
+		if err != nil {
+			return refreshDataMsg{err: fmt.Errorf("refresh snapshot: %w", err)}
+		}
+
+		start, err := time.Parse(time.RFC3339, m.startTime)
+		if err != nil {
+			return refreshDataMsg{err: fmt.Errorf("parse start time: %w", err)}
+		}
+		end, err := time.Parse(time.RFC3339, m.endTime)
+		if err != nil {
+			return refreshDataMsg{err: fmt.Errorf("parse end time: %w", err)}
+		}
+
+		metrics, err := m.prov.FetchMetrics(ctx, start, end, m.period)
+		if err != nil {
+			return refreshDataMsg{err: fmt.Errorf("refresh metrics: %w", err)}
+		}
+
+		activities, err := m.prov.FetchActivities(ctx, start, end)
+		if err != nil {
+			return refreshDataMsg{err: fmt.Errorf("refresh activities: %w", err)}
+		}
+
+		return refreshDataMsg{
+			snapshot:   snap,
+			metrics:    metrics,
+			activities: activities,
+		}
 	}
 }
 
