@@ -9,7 +9,9 @@ package metriccard
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/gfreschi/k6delta/internal/tui/common"
@@ -34,6 +36,9 @@ func DefaultSeverityThresholds() common.SeverityThresholds {
 	return common.DefaultSeverityThresholds
 }
 
+// ClearPulseMsg is sent after the pulse duration to reset the pulse state.
+type ClearPulseMsg struct{ ID string }
+
 // blockCharsRunes is the pre-computed rune slice for sparkline rendering.
 var blockCharsRunes = []rune(blockChars)
 
@@ -57,6 +62,16 @@ type Model struct {
 	// Report mode fields
 	peak float64
 	avg  float64
+
+	// Stale indicates the tile is showing potentially outdated data.
+	stale bool
+
+	// Pulse indicates a recent value change (briefly brightens border).
+	pulse bool
+
+	// Direction arrow fields: show brief up/down indicator after value changes.
+	prevValue float64
+	arrowTTL  int // decremented each SetValue; arrow visible when > 0
 }
 
 // NewModel creates a metric card tile with default severity thresholds.
@@ -71,11 +86,41 @@ func NewModel(ctx *tuictx.ProgramContext, label, unit string, width int) Model {
 }
 
 // SetValue updates the tile for live mode.
-func (m *Model) SetValue(value, max float64) {
+// Returns a tea.Cmd to clear the pulse after 400ms if the value changed.
+func (m *Model) SetValue(value, max float64) tea.Cmd {
+	// Decay direction arrow TTL on every call.
+	if m.arrowTTL > 0 {
+		m.arrowTTL--
+	}
+
+	changed := m.hasData && m.value != value
+	if changed {
+		m.prevValue = m.value
+		m.arrowTTL = 2 // visible for 2 subsequent SetValue calls
+	}
 	m.value = value
 	m.max = max
 	m.hasData = true
 	m.severity = computeSeverity(value, max, m.thresholds.WarnRatio, m.thresholds.ErrorRatio)
+
+	if changed {
+		m.pulse = true
+		label := m.label
+		return tea.Tick(400*time.Millisecond, func(time.Time) tea.Msg {
+			return ClearPulseMsg{ID: label}
+		})
+	}
+	return nil
+}
+
+// ClearPulse resets the pulse state after the pulse duration.
+func (m *Model) ClearPulse() {
+	m.pulse = false
+}
+
+// Label returns the tile label for matching ClearPulseMsg.
+func (m Model) Label() string {
+	return m.label
 }
 
 // SetDelta sets the delta string for count-variant tiles (e.g., "5->3").
@@ -118,6 +163,11 @@ func (m *Model) SetThresholds(th common.SeverityThresholds) {
 	m.thresholds = th
 }
 
+// SetStale marks the tile as displaying stale data (dims the border).
+func (m *Model) SetStale(stale bool) {
+	m.stale = stale
+}
+
 // UpdateContext updates the shared context.
 func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
@@ -149,8 +199,15 @@ func (m Model) View() string {
 }
 
 func (m Model) viewPercentage(border lipgloss.Style, innerW int) string {
-	// Value line: large percentage
+	// Value line: large percentage + optional direction arrow
 	valStr := fmt.Sprintf("%.0f%%", m.value)
+	if m.arrowTTL > 0 {
+		if m.value > m.prevValue {
+			valStr += " " + constants.IconArrowUp
+		} else {
+			valStr += " " + constants.IconArrowDn
+		}
+	}
 	valueLine := m.ctx.Styles.Common.BoldStyle.
 		Render(lipgloss.PlaceHorizontal(innerW, lipgloss.Center, valStr))
 
@@ -302,14 +359,20 @@ func (m Model) renderBlockSparkline(width int) string {
 
 func (m Model) borderStyle() lipgloss.Style {
 	ts := m.ctx.Styles.Tile
+	if m.stale {
+		return ts.Border // faint default border for stale data
+	}
+	style := ts.BorderOK
 	switch m.severity {
 	case common.SeverityWarn:
-		return ts.BorderWarn
+		style = ts.BorderWarn
 	case common.SeverityError:
-		return ts.BorderError
-	default:
-		return ts.BorderOK
+		style = ts.BorderError
 	}
+	if m.pulse {
+		style = style.Bold(true)
+	}
+	return style
 }
 
 func computeSeverity(value, max, warnRatio, errorRatio float64) common.Severity {

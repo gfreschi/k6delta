@@ -147,6 +147,93 @@ func TestCustomThresholds(t *testing.T) {
 	}
 }
 
+func TestSetStale(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := metriccard.NewModel(ctx, "CPU", "%", 14)
+	m.SetValue(55.0, 100.0)
+	m.SetStale(true)
+
+	view := m.View()
+	if view == "" {
+		t.Error("stale tile rendered empty")
+	}
+	// Stale tile should still show the value
+	if !strings.Contains(view, "55%") {
+		t.Errorf("stale tile should still show value, got: %s", view)
+	}
+}
+
+func TestPulseOnValueChange(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := metriccard.NewModel(ctx, "CPU", "%", 14)
+	m.SetValue(50.0, 100.0)
+
+	// Change value -- should return a tick command for pulse
+	cmd := m.SetValue(60.0, 100.0)
+	if cmd == nil {
+		t.Error("expected tick command for pulse, got nil")
+	}
+
+	// Same value -- no pulse
+	cmd = m.SetValue(60.0, 100.0)
+	if cmd != nil {
+		t.Error("expected nil command for same value, got non-nil")
+	}
+}
+
+func TestClearPulse(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := metriccard.NewModel(ctx, "CPU", "%", 14)
+	m.SetValue(50.0, 100.0)
+	m.SetValue(60.0, 100.0) // triggers pulse
+
+	m.ClearPulse()
+	// After clear, view should still render (no panic)
+	view := m.View()
+	if view == "" {
+		t.Error("expected non-empty view after ClearPulse")
+	}
+}
+
+func TestDirectionArrow(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := metriccard.NewModel(ctx, "CPU", "%", 14)
+	m.SetValue(50.0, 100.0)
+	m.SetValue(60.0, 100.0) // increase
+
+	view := m.View()
+	if !strings.Contains(view, "\u25b2") { // IconArrowUp
+		t.Errorf("expected up arrow after increase, got %q", view)
+	}
+
+	m.SetValue(40.0, 100.0) // decrease
+	view = m.View()
+	if !strings.Contains(view, "\u25bc") { // IconArrowDn
+		t.Errorf("expected down arrow after decrease, got %q", view)
+	}
+}
+
+func TestDirectionArrow_decays(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := metriccard.NewModel(ctx, "CPU", "%", 14)
+	m.SetValue(50.0, 100.0)
+	m.SetValue(60.0, 100.0) // triggers arrow, TTL=2
+
+	// First call with same value: TTL decrements to 1, arrow still visible
+	m.SetValue(60.0, 100.0)
+	view := m.View()
+	if !strings.Contains(view, "\u25b2") {
+		t.Errorf("expected arrow still visible after 1 same-value call, got %q", view)
+	}
+
+	// Second call with same value: TTL decrements to 0, arrow gone
+	m.SetValue(60.0, 100.0)
+	view = m.View()
+	if strings.Contains(view, "\u25b2") {
+		t.Errorf("expected arrow gone after 2 same-value calls, got %q", view)
+	}
+}
+
 func TestUpdateContext(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := metriccard.NewModel(ctx, "CPU", "%", 20)
