@@ -52,7 +52,6 @@ type Model struct {
 	parsedEnd   time.Time
 	period     int32
 
-	jsonOutput bool
 	outputFile string
 
 	ctx        *tuictx.ProgramContext
@@ -86,7 +85,7 @@ type Model struct {
 
 // NewModel creates a new analyze TUI model.
 // An optional refreshSec parameter enables auto-refresh (0 = disabled).
-func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, jsonOutput bool, outputFile string, refreshSec ...int) Model {
+func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, endTime string, period int32, outputFile string, refreshSec ...int) Model {
 	ctx := tuictx.New(80, 24)
 
 	s := spinner.New(spinner.WithSpinner(spinner.MiniDot),
@@ -116,7 +115,6 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, en
 		parsedStart:     parsedStart,
 		parsedEnd:       parsedEnd,
 		period:          period,
-		jsonOutput:      jsonOutput,
 		outputFile:      outputFile,
 		ctx:             ctx,
 		stepper:         st,

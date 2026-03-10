@@ -70,7 +70,7 @@ func (m *Model) updateFooterHints() {
 		{Key: "tab", Action: "panel"},
 		{Key: jumpHint, Action: "jump"},
 		{Key: "+", Action: "expand"},
-		{Key: "\u2191\u2193", Action: "scroll"},
+		{Key: "↑↓", Action: "scroll"},
 		{Key: "e", Action: "export"},
 		{Key: "?", Action: "help"},
 	}
@@ -172,7 +172,10 @@ func (m *Model) updateDashboardFocus() tea.Cmd {
 }
 
 func (m *Model) cycleExpandFocusedPanel() tea.Cmd {
-	panels := []*panel.Model{&m.statePanel, &m.metricsPanel, &m.eventsPanel}
+	panels := []*panel.Model{&m.statePanel, &m.metricsPanel}
+	if m.hasActivities() {
+		panels = append(panels, &m.eventsPanel)
+	}
 	idx := m.focusMgr.Current()
 	if idx >= 0 && idx < len(panels) {
 		return panels[idx].CycleExpand()
@@ -189,7 +192,10 @@ func (m Model) anyPanelExpanded() bool {
 }
 
 func (m *Model) expandFocusedPanelFull() {
-	panels := []*panel.Model{&m.statePanel, &m.metricsPanel, &m.eventsPanel}
+	panels := []*panel.Model{&m.statePanel, &m.metricsPanel}
+	if m.hasActivities() {
+		panels = append(panels, &m.eventsPanel)
+	}
 	idx := m.focusMgr.Current()
 	if idx >= 0 && idx < len(panels) {
 		panels[idx].SetExpandFull()
@@ -354,16 +360,14 @@ func (m Model) renderActivitiesContent() string {
 }
 
 func (m Model) renderActivitiesTimeline() string {
-	start, errS := time.Parse(time.RFC3339, m.startTime)
-	end, errE := time.Parse(time.RFC3339, m.endTime)
-	if errS != nil || errE != nil {
+	if m.parsedStart.IsZero() || m.parsedEnd.IsZero() {
 		return m.renderActivitiesContent()
 	}
 
 	eventsW := m.ctx.ContentWidth - m.ctx.ContentWidth*constants.PanelSplitPct/100
 	innerW := eventsW - constants.PanelBorderWidth - constants.PanelInnerPadding
 
-	tl := timeline.NewModel(m.ctx, start, end, innerW)
+	tl := timeline.NewModel(m.ctx, m.parsedStart, m.parsedEnd, innerW)
 
 	// Add metric lanes
 	for _, mr := range m.metrics {
@@ -431,7 +435,7 @@ func (m Model) renderHelpOverlay() string {
 			{"tab / shift+tab", "Next / previous panel"},
 			{"1-3", "Jump to panel"},
 			{"+", "Toggle expand (normal / full)"},
-			{"\u2191\u2193 / j k", "Scroll focused panel"},
+			{"↑↓ / j k", "Scroll focused panel"},
 		}},
 		{Title: "Actions", Keys: actionKeys},
 	})

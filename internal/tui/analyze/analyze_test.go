@@ -22,7 +22,7 @@ func TestAnalyzeModel_goldenHappyPath(t *testing.T) {
 	start := testutil.ReferenceTime
 	end := start.Add(60 * time.Second)
 
-	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "")
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, "")
 
 	// Set terminal size
 	var model tea.Model = m
@@ -55,7 +55,7 @@ func TestAnalyzeModel_goldenHappyPath_stacked(t *testing.T) {
 	start := testutil.ReferenceTime
 	end := start.Add(60 * time.Second)
 
-	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "")
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, "")
 
 	var model tea.Model = m
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -79,7 +79,7 @@ func TestAnalyzeModel_refreshCountdown(t *testing.T) {
 	start := testutil.ReferenceTime
 	end := start.Add(60 * time.Second)
 
-	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "", 30)
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, "", 30)
 
 	var model tea.Model = m
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -119,7 +119,7 @@ func TestAnalyzeModel_refreshDisabled(t *testing.T) {
 	start := testutil.ReferenceTime
 	end := start.Add(60 * time.Second)
 
-	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "", 0)
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, "", 0)
 
 	var model tea.Model = m
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -157,7 +157,7 @@ func TestAnalyzeModel_refreshDataUpdates(t *testing.T) {
 	start := testutil.ReferenceTime
 	end := start.Add(60 * time.Second)
 
-	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, false, "", 30)
+	m := NewModel(app, prov, start.Format(time.RFC3339), end.Format(time.RFC3339), 10, "", 30)
 
 	var model tea.Model = m
 	model, _ = model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

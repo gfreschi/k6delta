@@ -57,7 +57,7 @@ func NewAnalyzeCmd() *cobra.Command {
 				return analyzetui.RunJSON(resolved, prov, startTime, endTime, period, outputFile)
 			}
 
-			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, jsonOutput, outputFile, refreshSec)
+			m := analyzetui.NewModel(resolved, prov, startTime, endTime, period, outputFile, refreshSec)
 			p := tea.NewProgram(m)
 			if ps, ok := prov.(progressSetter); ok {
 				ps.SetOnProgress(func(id string, current, total int) {
