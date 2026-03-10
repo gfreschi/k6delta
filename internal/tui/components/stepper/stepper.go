@@ -129,9 +129,9 @@ func (m Model) View() string {
 	for _, s := range m.steps {
 		switch s.Status {
 		case StepPending:
-			b.WriteString("  " + constants.IconPending + " " + st.Pending.Render(s.Name))
+			b.WriteString(" " + constants.IconPending + " " + st.Pending.Render(s.Name))
 		case StepRunning:
-			line := "  " + constants.IconRunning + " " + st.Running.Render(s.Name) + "..."
+			line := " " + constants.IconRunning + " " + st.Running.Render(s.Name) + "..."
 			if s.Detail != "" {
 				line += " " + st.Detail.Render(s.Detail)
 			}
@@ -145,7 +145,7 @@ func (m Model) View() string {
 			if s.flash {
 				icon = ds.BetterStrong.Render(constants.IconDone)
 			}
-			line := "  " + icon + " " + st.Done.Render(s.Name)
+			line := " " + icon + " " + st.Done.Render(s.Name)
 			if s.Detail != "" {
 				line += ": " + st.Detail.Render(s.Detail)
 			}
@@ -154,7 +154,7 @@ func (m Model) View() string {
 			}
 			b.WriteString(line)
 		case StepFailed:
-			line := "  " + cs.XMark + " " + st.Failed.Render(s.Name)
+			line := " " + cs.XMark + " " + st.Failed.Render(s.Name)
 			if s.Detail != "" {
 				line += ": " + st.Detail.Render(s.Detail)
 			}
