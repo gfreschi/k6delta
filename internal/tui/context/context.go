@@ -6,6 +6,17 @@ import (
 	"github.com/gfreschi/k6delta/internal/tui/theme"
 )
 
+// ViewType identifies the active dashboard view for rendering decisions.
+type ViewType int
+
+const (
+	ViewBrowsing  ViewType = iota // app browser (default)
+	ViewRunning                   // k6 run in progress
+	ViewAnalyzing                 // analyze metrics
+	ViewComparing                 // compare reports
+	ViewReport                    // viewing a saved report
+)
+
 // ProgramContext is the central state container shared by all TUI models.
 type ProgramContext struct {
 	ScreenWidth   int
@@ -14,6 +25,7 @@ type ProgramContext struct {
 	ContentHeight int
 	Theme         theme.Theme
 	Styles        Styles
+	ActiveView    ViewType
 }
 
 // New creates a ProgramContext with default theme and dimensions.
