@@ -30,6 +30,7 @@ type Model struct {
 	chart       tslc.Model
 	annotations []Annotation
 	startTime   time.Time
+	idle        bool
 }
 
 // NewModel creates a streaming chart with braille rendering.
@@ -77,6 +78,11 @@ func (m *Model) Resize(width, height int) {
 	}
 }
 
+// SetIdle marks the chart as paused (no new data flowing).
+func (m *Model) SetIdle(idle bool) {
+	m.idle = idle
+}
+
 // UpdateContext updates the shared program context.
 func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 	m.ctx = ctx
@@ -85,7 +91,11 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 // View renders the chart with a title header and annotation markers.
 func (m Model) View() string {
 	s := m.ctx.Styles
-	header := s.Header.Root.Render("─ " + m.title + " (" + m.unit + ") ")
+	headerText := "─ " + m.title + " (" + m.unit + ") "
+	if m.idle {
+		headerText += s.Common.FaintTextStyle.Render("(paused)")
+	}
+	header := s.Header.Root.Render(headerText)
 	parts := []string{header, m.chart.View()}
 
 	if ann := m.renderAnnotations(); ann != "" {

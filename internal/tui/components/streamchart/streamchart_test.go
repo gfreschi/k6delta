@@ -115,6 +115,18 @@ func TestAnnotation_maxThreeShown(t *testing.T) {
 	}
 }
 
+func TestSetIdle(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	m := streamchart.NewModel(ctx, "RPS", "req/s", 40, 12)
+	m.Resize(40, 12)
+	m.SetIdle(true)
+
+	view := m.View()
+	if !strings.Contains(view, "(paused)") {
+		t.Errorf("idle chart should show '(paused)', got %q", view)
+	}
+}
+
 func TestAnnotation_empty(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	m := streamchart.NewModel(ctx, "RPS", "req/s", 60, 12)
