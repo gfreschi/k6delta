@@ -6,6 +6,7 @@ Complete CLI reference for k6delta. Run any command with `--help` for inline hel
 
 ## Table of Contents
 
+- [k6delta dashboard](#k6delta-dashboard) - interactive workspace
 - [k6delta run](#k6delta-run) - load test + infra monitoring
 - [k6delta analyze](#k6delta-analyze) - query infra metrics
 - [k6delta compare](#k6delta-compare) - diff two runs
@@ -14,6 +15,44 @@ Complete CLI reference for k6delta. Run any command with `--help` for inline hel
 - [CI Mode](#ci-mode) - JSON output + exit codes
 - [Configuration](#configuration) - k6delta.yaml reference
 - [Workflows](#workflows) - common usage patterns
+
+---
+
+## k6delta dashboard
+
+Interactive workspace for browsing configured apps, selecting test phases, and launching commands. This is the default entrypoint -- running `k6delta` with no arguments opens the dashboard.
+
+```bash
+k6delta                    # opens dashboard (default)
+k6delta dashboard          # explicit form
+```
+
+### Flags
+
+| Flag       | Type   | Default      | Description                  |
+|------------|--------|--------------|------------------------------|
+| `--config` | string | k6delta.yaml | Config file path             |
+
+### Keybindings
+
+| Key              | Action                     |
+|------------------|----------------------------|
+| `j/k` or `up/dn` | Navigate app list         |
+| `h/l` or `left/right` | Previous/next test phase |
+| `enter`     | Run selected app + phase   |
+| `a`         | Analyze selected app       |
+| `c`         | Compare reports            |
+| `r`         | View reports               |
+| `d`         | Launch demo                |
+| `?`         | Help overlay               |
+| `q`         | Quit                       |
+
+### Behavior
+
+- **TTY detected:** opens the full-screen dashboard TUI
+- **Non-TTY (piped/redirected):** prints the help text instead
+- The dashboard reads `k6delta.yaml` and lists all configured apps with their provider type
+- Phase picker cycles through smoke, load, stress, soak for the selected app
 
 ---
 

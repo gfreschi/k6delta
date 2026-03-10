@@ -37,6 +37,7 @@ for demos and testing.
 - **Verdict system:** configurable PASS/WARN/FAIL thresholds for CPU, 5xx errors, and regressions
 - **CI mode:** `--ci` flag on all commands - JSON to stdout, exit code 0 (pass/warn) or 1 (fail)
 - **Interactive TUI:** live dashboard with braille charts, panel navigation, and responsive layout
+- **Dashboard workspace:** launch `k6delta` with no arguments for a persistent hub to browse apps, run tests, and review results
 - **Standalone analysis:** query infrastructure metrics for any time window, no k6 required
 - **Demo mode:** try the full TUI experience with `k6delta demo` - no infrastructure or k6 binary needed
 - **Graceful degradation:** optional config fields are silently skipped, not errored
@@ -58,13 +59,16 @@ k6delta init
 
 # 2. Edit k6delta.yaml with your provider and app settings
 
-# 3. Run a load test with infrastructure monitoring
+# 3. Open the dashboard to browse apps and run tests
+k6delta
+
+# 4. Or run a specific load test directly
 k6delta run --app web --phase smoke
 
-# 4. Compare two runs
+# 5. Compare two runs
 k6delta compare results/report-baseline.json results/report-latest.json
 
-# 5. Use in CI (JSON to stdout, exit code = verdict)
+# 6. Use in CI (JSON to stdout, exit code = verdict)
 k6delta run --app web --phase load --ci
 ```
 
@@ -99,6 +103,8 @@ make build    # produces ./k6delta
 
 | Command                | Description                                              |
 |------------------------|----------------------------------------------------------|
+| `k6delta`              | Open the dashboard (default when run with no arguments)  |
+| `k6delta dashboard`    | Same as above (explicit form)                            |
 | `k6delta run`          | Execute k6 test + monitor infrastructure + generate report |
 | `k6delta analyze`      | Query infrastructure metrics for a time window (no k6)   |
 | `k6delta compare`      | Diff two report JSONs with deltas and regression verdict |
