@@ -1,11 +1,11 @@
 k6delta: test-app (staging) -- smoke                                                       
                                                                                            
-  ◯ AWS credentials                                                                        
-  ◯ Pre-snapshot                                                                           
-  ◯ Running k6                                                                             
-  ◯ Post-snapshot                                                                          
-  ◯ Analysis                                                                               
-  ◯ Report                                                                                 
+ ◯ AWS credentials                                                                         
+ ◯ Pre-snapshot                                                                            
+ ◯ Running k6                                                                              
+ ◯ Post-snapshot                                                                           
+ ◯ Analysis                                                                                
+ ◯ Report                                                                                  
                                                                                            
 Load Test Report                                                                           
                                                                                            
