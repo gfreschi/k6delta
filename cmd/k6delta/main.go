@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/gfreschi/k6delta/internal/cli"
 )
@@ -22,13 +23,23 @@ func main() {
 		Version:       version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !term.IsTerminal(int(os.Stdout.Fd())) {
+				return cmd.Help()
+			}
+			configFile, _ := cmd.Flags().GetString("config")
+			return cli.RunDashboard(configFile)
+		},
 	}
+
+	rootCmd.PersistentFlags().String("config", "", "config file path (default: k6delta.yaml)")
 
 	rootCmd.AddCommand(cli.NewRunCmd())
 	rootCmd.AddCommand(cli.NewAnalyzeCmd())
 	rootCmd.AddCommand(cli.NewCompareCmd())
 	rootCmd.AddCommand(cli.NewInitCmd())
 	rootCmd.AddCommand(cli.NewDemoCmd())
+	rootCmd.AddCommand(cli.NewDashboardCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		var exitErr *cli.ExitError
