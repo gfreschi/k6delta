@@ -46,9 +46,11 @@ type Model struct {
 	app  config.ResolvedApp
 	prov provider.InfraProvider
 
-	startTime string
-	endTime   string
-	period    int32
+	startTime  string
+	endTime    string
+	parsedStart time.Time
+	parsedEnd   time.Time
+	period     int32
 
 	jsonOutput bool
 	outputFile string
@@ -78,7 +80,8 @@ type Model struct {
 
 	// Auto-refresh
 	refreshInterval  time.Duration
-	refreshCountdown int // seconds until next refresh
+	refreshCountdown int  // seconds until next refresh
+	refreshInFlight  bool // true while refreshData() goroutine is running
 }
 
 // NewModel creates a new analyze TUI model.
@@ -101,11 +104,17 @@ func NewModel(app config.ResolvedApp, prov provider.InfraProvider, startTime, en
 		interval = time.Duration(refreshSec[0]) * time.Second
 	}
 
+	// Pre-parse time strings once; fetchMetrics/refreshData reuse the parsed values.
+	parsedStart, _ := time.Parse(time.RFC3339, startTime)
+	parsedEnd, _ := time.Parse(time.RFC3339, endTime)
+
 	return Model{
 		app:             app,
 		prov:            prov,
 		startTime:       startTime,
 		endTime:         endTime,
+		parsedStart:     parsedStart,
+		parsedEnd:       parsedEnd,
 		period:          period,
 		jsonOutput:      jsonOutput,
 		outputFile:      outputFile,
@@ -181,8 +190,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			case key.Matches(msg, keys.AnalyzeKeys.Refresh):
-				if m.refreshInterval > 0 {
-					m.refreshCountdown = 0
+				if m.refreshInterval > 0 && !m.refreshInFlight {
+					m.refreshInFlight = true
+					m.refreshCountdown = int(m.refreshInterval.Seconds())
 					m.headerComp.SetActive(true)
 					return m, m.refreshData()
 				}
@@ -281,7 +291,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.refreshCountdown--
-		if m.refreshCountdown <= 0 {
+		if m.refreshCountdown <= 0 && !m.refreshInFlight {
+			m.refreshInFlight = true
 			m.refreshCountdown = int(m.refreshInterval.Seconds())
 			m.headerComp.SetActive(true)
 			m.updateFooterHints()
@@ -293,6 +304,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 
 	case refreshDataMsg:
+		m.refreshInFlight = false
 		m.headerComp.SetActive(false)
 		if msg.err != nil {
 			m.updateFooterHints()
@@ -366,15 +378,7 @@ func (m Model) fetchState() tea.Cmd {
 
 func (m Model) fetchMetrics() tea.Cmd {
 	return func() tea.Msg {
-		start, err := time.Parse(time.RFC3339, m.startTime)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("parse start time: %w", err)}
-		}
-		end, err := time.Parse(time.RFC3339, m.endTime)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("parse end time: %w", err)}
-		}
-		metrics, err := m.prov.FetchMetrics(context.Background(), start, end, m.period)
+		metrics, err := m.prov.FetchMetrics(context.Background(), m.parsedStart, m.parsedEnd, m.period)
 		if err != nil {
 			return errMsg{err: fmt.Errorf("fetch metrics: %w", err)}
 		}
@@ -384,15 +388,7 @@ func (m Model) fetchMetrics() tea.Cmd {
 
 func (m Model) fetchActivities() tea.Cmd {
 	return func() tea.Msg {
-		start, err := time.Parse(time.RFC3339, m.startTime)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("parse start time: %w", err)}
-		}
-		end, err := time.Parse(time.RFC3339, m.endTime)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("parse end time: %w", err)}
-		}
-		activities, err := m.prov.FetchActivities(context.Background(), start, end)
+		activities, err := m.prov.FetchActivities(context.Background(), m.parsedStart, m.parsedEnd)
 		if err != nil {
 			return errMsg{err: fmt.Errorf("fetch activities: %w", err)}
 		}
@@ -409,21 +405,12 @@ func (m Model) refreshData() tea.Cmd {
 			return refreshDataMsg{err: fmt.Errorf("refresh snapshot: %w", err)}
 		}
 
-		start, err := time.Parse(time.RFC3339, m.startTime)
-		if err != nil {
-			return refreshDataMsg{err: fmt.Errorf("parse start time: %w", err)}
-		}
-		end, err := time.Parse(time.RFC3339, m.endTime)
-		if err != nil {
-			return refreshDataMsg{err: fmt.Errorf("parse end time: %w", err)}
-		}
-
-		metrics, err := m.prov.FetchMetrics(ctx, start, end, m.period)
+		metrics, err := m.prov.FetchMetrics(ctx, m.parsedStart, m.parsedEnd, m.period)
 		if err != nil {
 			return refreshDataMsg{err: fmt.Errorf("refresh metrics: %w", err)}
 		}
 
-		activities, err := m.prov.FetchActivities(ctx, start, end)
+		activities, err := m.prov.FetchActivities(ctx, m.parsedStart, m.parsedEnd)
 		if err != nil {
 			return refreshDataMsg{err: fmt.Errorf("refresh activities: %w", err)}
 		}

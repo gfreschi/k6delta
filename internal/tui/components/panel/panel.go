@@ -19,6 +19,9 @@ const (
 	transitionInterval = 50 * time.Millisecond
 )
 
+// bodyPadStyle is the fixed left-padding applied to all panel content.
+var bodyPadStyle = lipgloss.NewStyle().PaddingLeft(1)
+
 // TransitionTickMsg signals the panel to advance its border transition animation.
 type TransitionTickMsg struct{}
 
@@ -239,7 +242,7 @@ func (m Model) View() string {
 	} else {
 		body = m.viewport.View()
 	}
-	body = lipgloss.NewStyle().PaddingLeft(1).Render(body)
+	body = bodyPadStyle.Render(body)
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	return style.Width(m.width).Render(inner)

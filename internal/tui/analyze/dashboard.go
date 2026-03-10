@@ -181,9 +181,11 @@ func (m *Model) cycleExpandFocusedPanel() tea.Cmd {
 }
 
 func (m Model) anyPanelExpanded() bool {
-	return m.statePanel.ExpandMode() != constants.ExpandNormal ||
-		m.metricsPanel.ExpandMode() != constants.ExpandNormal ||
-		m.eventsPanel.ExpandMode() != constants.ExpandNormal
+	if m.statePanel.ExpandMode() != constants.ExpandNormal ||
+		m.metricsPanel.ExpandMode() != constants.ExpandNormal {
+		return true
+	}
+	return m.hasActivities() && m.eventsPanel.ExpandMode() != constants.ExpandNormal
 }
 
 func (m *Model) expandFocusedPanelFull() {
@@ -197,7 +199,9 @@ func (m *Model) expandFocusedPanelFull() {
 func (m *Model) resetAllPanelExpand() {
 	m.statePanel.ResetExpand()
 	m.metricsPanel.ResetExpand()
-	m.eventsPanel.ResetExpand()
+	if m.hasActivities() {
+		m.eventsPanel.ResetExpand()
+	}
 }
 
 func (m *Model) scrollFocusedPanel(dir int) {

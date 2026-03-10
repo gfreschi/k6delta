@@ -156,7 +156,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// Drill-down requires full-expand to show A/B detail
 					m.drillActive = true
 					m.expandFocusedPanelFull()
-					m.footerComp.SetState(footer.StateExpanded)
+					m.footerComp.SetState(footer.StateDrillDown)
 					m.refreshDrillPanel()
 				}
 				return m, nil

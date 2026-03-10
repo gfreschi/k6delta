@@ -31,4 +31,4 @@ Compare: web load (staging)
 │  8 improved · 0 regressed · 5 unchanged                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
                                                                                                                         
-  q quit · tab panel · 1-2 jump · esc collapse · enter drill · ↑↓ scroll · s sort · e export · ? help                   
+  q quit · enter drill · ↑↓ scroll · s sort · e export · ? help · esc close                                             
