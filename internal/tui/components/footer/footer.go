@@ -8,6 +8,16 @@ import (
 	tuictx "github.com/gfreschi/k6delta/internal/tui/context"
 )
 
+// FooterState represents the current interaction mode.
+type FooterState int
+
+const (
+	StateNormal    FooterState = iota
+	StateExpanded              // a panel is fully expanded
+	StateDrillDown             // drill-down active
+	StateHelp                  // help overlay active
+)
+
 // KeyHint represents a single key-action pair (legacy type).
 type KeyHint struct {
 	Key    string
@@ -26,6 +36,7 @@ type Model struct {
 	ctx   *tuictx.ProgramContext
 	hints []Hint
 	width int
+	state FooterState
 }
 
 // NewModel creates a footer with legacy KeyHint entries.
@@ -43,6 +54,11 @@ func (m *Model) SetHints(hints []KeyHint) {
 	m.hints = convertKeyHints(hints)
 }
 
+// SetState sets the footer interaction mode (normal, expanded, drill-down, help).
+func (m *Model) SetState(state FooterState) {
+	m.state = state
+}
+
 // SetWidth sets the available width for responsive label selection.
 func (m *Model) SetWidth(w int) {
 	m.width = w
@@ -57,14 +73,46 @@ func (m *Model) UpdateContext(ctx *tuictx.ProgramContext) {
 // View renders the footer bar.
 func (m Model) View() string {
 	s := m.ctx.Styles.Footer
+	hints := m.effectiveHints()
 	var parts []string
-	for _, h := range m.hints {
+	for _, h := range hints {
 		label := m.pickLabel(h)
 		part := s.Key.Render(h.Key) + " " + s.Action.Render(label)
 		parts = append(parts, part)
 	}
 	sep := " " + s.Separator.Render(constants.IconBullet) + " "
 	return "  " + strings.Join(parts, sep)
+}
+
+func (m Model) effectiveHints() []Hint {
+	switch m.state {
+	case StateHelp:
+		return []Hint{{Key: "?", Label: "close", Short: "close"}, {Key: "esc", Label: "close", Short: "close"}}
+	case StateExpanded:
+		out := make([]Hint, 0, len(m.hints))
+		for _, h := range m.hints {
+			if h.Label == "expand" {
+				out = append(out, Hint{Key: "esc", Label: "collapse", Short: "collapse"})
+				continue
+			}
+			out = append(out, h)
+		}
+		return out
+	case StateDrillDown:
+		out := make([]Hint, 0, len(m.hints))
+		for _, h := range m.hints {
+			switch h.Label {
+			case "expand", "panel", "jump":
+				continue // hide panel nav in drill-down
+			default:
+				out = append(out, h)
+			}
+		}
+		out = append(out, Hint{Key: "esc", Label: "close", Short: "close"})
+		return out
+	default:
+		return m.hints
+	}
 }
 
 func (m Model) pickLabel(h Hint) string {

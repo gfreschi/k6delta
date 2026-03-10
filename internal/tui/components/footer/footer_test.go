@@ -48,6 +48,41 @@ func TestFooterResponsiveCollapse(t *testing.T) {
 	}
 }
 
+func TestFooter_SetState(t *testing.T) {
+	ctx := tuictx.New(120, 40)
+	f := footer.NewModel(ctx, []footer.KeyHint{
+		{Key: "q", Action: "quit"},
+		{Key: "+", Action: "expand"},
+	})
+
+	// Normal state renders all hints
+	view := f.View()
+	if !strings.Contains(view, "expand") {
+		t.Error("expected 'expand' in normal state")
+	}
+
+	// Expanded state replaces expand with collapse
+	f.SetState(footer.StateExpanded)
+	view = f.View()
+	if !strings.Contains(view, "collapse") {
+		t.Error("expected 'collapse' in expanded state")
+	}
+
+	// Help state shows only close hint
+	f.SetState(footer.StateHelp)
+	view = f.View()
+	if !strings.Contains(view, "close") {
+		t.Error("expected 'close' in help state")
+	}
+
+	// Back to normal
+	f.SetState(footer.StateNormal)
+	view = f.View()
+	if !strings.Contains(view, "expand") {
+		t.Error("expected 'expand' restored in normal state")
+	}
+}
+
 func TestFooterKeyHintBackwardCompat(t *testing.T) {
 	ctx := tuictx.New(120, 40)
 	f := footer.NewModel(ctx, []footer.KeyHint{
