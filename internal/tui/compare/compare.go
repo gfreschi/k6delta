@@ -85,14 +85,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := tea.Batch(m.k6Panel.AdvanceTransition(), m.infraPanel.AdvanceTransition())
 			return m, cmd
 		}
+	case panel.ExpandTransitionTickMsg:
+		if m.focusMgr != nil {
+			cmd := tea.Batch(m.k6Panel.AdvanceExpandTransition(), m.infraPanel.AdvanceExpandTransition())
+			return m, cmd
+		}
 	case tea.KeyMsg:
 		if key.Matches(msg, keys.Keys.Help) {
 			m.showHelp = !m.showHelp
+			if m.showHelp {
+				m.footerComp.SetState(footer.StateHelp)
+			} else {
+				m.footerComp.SetState(footer.StateNormal)
+			}
 			return m, nil
 		}
 		if m.showHelp {
 			if key.Matches(msg, keys.Keys.Escape) {
 				m.showHelp = false
+				m.footerComp.SetState(footer.StateNormal)
 				return m, nil
 			}
 			return m, nil
@@ -137,13 +148,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusMgr.SetFocus(1)
 				return m, m.updatePanelFocus()
 			case key.Matches(msg, keys.Keys.Expand):
-				m.cycleExpandFocusedPanel()
-				return m, nil
+				cmd := m.cycleExpandFocusedPanel()
+				m.footerComp.SetState(footer.StateExpanded)
+				return m, cmd
 			case key.Matches(msg, keys.Keys.Enter):
 				if !m.drillActive {
 					// Drill-down requires full-expand to show A/B detail
 					m.drillActive = true
 					m.expandFocusedPanelFull()
+					m.footerComp.SetState(footer.StateExpanded)
 					m.refreshDrillPanel()
 				}
 				return m, nil
@@ -151,11 +164,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.drillActive {
 					m.drillActive = false
 					m.resetAllPanelExpand()
+					m.footerComp.SetState(footer.StateNormal)
 					m.refreshPanels()
 					return m, nil
 				}
 				if m.anyPanelExpanded() {
 					m.resetAllPanelExpand()
+					m.footerComp.SetState(footer.StateNormal)
 					return m, nil
 				}
 			}
@@ -257,6 +272,9 @@ func (m *Model) initDashboard() {
 	m.infraPanel = panel.NewModel(m.ctx, "Infrastructure [2]", w, panelH)
 	m.infraPanel.SetContent(m.renderInfraTable())
 
+	m.k6Panel.SetDrillable(true)
+	m.infraPanel.SetDrillable(true)
+
 	m.focusMgr = focus.New(2)
 	m.k6Panel.SetFocused(true)
 
@@ -309,12 +327,13 @@ func (m *Model) updatePanelFocus() tea.Cmd {
 	return tea.Batch(m.k6Panel.TransitionCmd(), m.infraPanel.TransitionCmd())
 }
 
-func (m *Model) cycleExpandFocusedPanel() {
+func (m *Model) cycleExpandFocusedPanel() tea.Cmd {
 	panels := []*panel.Model{&m.k6Panel, &m.infraPanel}
 	idx := m.focusMgr.Current()
 	if idx >= 0 && idx < len(panels) {
-		panels[idx].CycleExpand()
+		return panels[idx].CycleExpand()
 	}
+	return nil
 }
 
 func (m *Model) expandFocusedPanelFull() {
