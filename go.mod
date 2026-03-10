@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/applicationautoscaling v1.41.12
 	github.com/aws/aws-sdk-go-v2/service/autoscaling v1.64.2
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.55.1
-	github.com/aws/aws-sdk-go-v2/service/ecs v1.73.0
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.73.1
 	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.54.7
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.8
 	github.com/charmbracelet/bubbles v1.0.0
